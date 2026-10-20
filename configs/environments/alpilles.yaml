@@ -1,0 +1,103 @@
+# =============================================================================
+#  Environnement : Massif des Alpilles (biome méditerranéen)
+#  Toute la génération spatiale est pilotée par ce fichier (approche data-driven).
+#  Convention de grille : [lignes (Nord -> Sud), colonnes (Ouest -> Est)]
+# =============================================================================
+
+biome_name: "Mediterranean - Alpilles"
+grid_size: [50, 50]
+seed: 42
+
+# -----------------------------------------------------------------------------
+#  TOPOGRAPHIE
+# -----------------------------------------------------------------------------
+# Types de relief discrets. `min_elevation` = seuil bas sur l'élévation
+# normalisée [0, 1] : une cellule prend le type de plus haut seuil atteint.
+topography_types:
+  0: { name: "Plaine",   min_elevation: 0.00, color: "#e6d8a8" }
+  1: { name: "Plateau",  min_elevation: 0.28, color: "#c2a66b" }
+  2: { name: "Montagne", min_elevation: 0.52, color: "#8a6a4a" }
+  3: { name: "Falaise",  min_elevation: 0.80, color: "#4a4a52" }
+
+topography_generation:
+  # Crête principale orientée Est-Ouest au centre de la carte
+  ridge_center: 0.5          # position N-S de la crête (fraction de la hauteur)
+  ridge_width: 0.10          # écart-type du profil N-S (fraction de la hauteur)
+  ridge_length: 0.80         # étendue E-O du massif (fraction de la largeur)
+  ridge_sinuosity: 0.05      # ondulation N-S de la ligne de crête
+  # Couronne de plateaux autour du massif
+  plateau_width: 0.24        # écart-type du piémont (fraction de la hauteur)
+  plateau_strength: 0.45     # poids relatif du piémont
+  # Bruit spatial (relief secondaire)
+  noise_sigma: 3.0           # lissage gaussien (en cellules)
+  noise_amplitude: 0.18
+  # Les cellules de montagne à forte pente deviennent des falaises
+  cliff_slope_threshold: 0.075
+
+# -----------------------------------------------------------------------------
+#  VÉGÉTATION (fermeture du milieu, 0.0 = nu, 1.0 = fermé)
+# -----------------------------------------------------------------------------
+vegetation_strata:
+  - { name: "Clairière / Roche", min: 0.0, max: 0.2 }
+  - { name: "Garrigue",          min: 0.2, max: 0.6 }
+  - { name: "Forêt / Pinède",    min: 0.6, max: 1.0 }
+
+vegetation_generation:
+  noise_sigma: 2.0           # lissage du bruit spatial (cellules)
+  noise_amplitude: 0.18      # amplitude de base du bruit
+  smoothing_sigma: 0.8       # lissage final (atténue les transitions abruptes)
+
+# Règles d'affinité végétation <-> topographie (par ID de topographie)
+#   mean        : fermeture moyenne attendue
+#   variability : multiplicateur de l'amplitude du bruit
+#   min / max   : bornes strictes
+vegetation_topography_rules:
+  0: { mean: 0.45, variability: 1.6, min: 0.05, max: 1.00 }  # Plaine : cultures, haies, bosquets
+  1: { mean: 0.38, variability: 0.8, min: 0.15, max: 0.70 }  # Plateau : garrigue
+  2: { mean: 0.62, variability: 1.0, min: 0.20, max: 0.95 }  # Montagne : versants à pinède
+  3: { mean: 0.05, variability: 0.3, min: 0.00, max: 0.15 }  # Falaise : quasi nue
+
+# -----------------------------------------------------------------------------
+#  PROIES
+# -----------------------------------------------------------------------------
+prey_generation:
+  noise_sigma: 2.0           # lissage de la variation spatiale aléatoire
+
+# Pour chaque espèce :
+#   max_density          : densité maximale (individus / cellule)
+#   preferred_topography : poids d'affinité [0, 1] par ID de topographie
+#   optimal_vegetation   : [min, max] de fermeture où l'espèce prospère
+#   vegetation_tolerance : décroissance gaussienne hors de l'optimum
+#   noise_amplitude      : variation spatiale aléatoire relative
+preys:
+  lapin:
+    display_name: "Lapin de garenne"
+    max_density: 12.0
+    preferred_topography: { 0: 1.0, 1: 0.9, 2: 0.3, 3: 0.0 }
+    optimal_vegetation: [0.20, 0.50]
+    vegetation_tolerance: 0.12
+    noise_amplitude: 0.20
+
+  perdrix:
+    display_name: "Perdrix rouge"
+    max_density: 6.0
+    preferred_topography: { 0: 0.8, 1: 1.0, 2: 0.4, 3: 0.05 }
+    optimal_vegetation: [0.15, 0.45]
+    vegetation_tolerance: 0.10
+    noise_amplitude: 0.20
+
+  lezard:
+    display_name: "Lézard ocellé"
+    max_density: 20.0
+    preferred_topography: { 0: 0.3, 1: 0.8, 2: 0.7, 3: 1.0 }
+    optimal_vegetation: [0.00, 0.30]
+    vegetation_tolerance: 0.12
+    noise_amplitude: 0.25
+
+  pigeon:
+    display_name: "Pigeon biset"
+    max_density: 8.0
+    preferred_topography: { 0: 0.6, 1: 0.4, 2: 0.5, 3: 1.0 }
+    optimal_vegetation: [0.00, 0.40]
+    vegetation_tolerance: 0.25
+    noise_amplitude: 0.15
