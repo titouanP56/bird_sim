@@ -1,0 +1,60 @@
+# =============================================================================
+#  Espèce : Aigle de Bonelli (Aquila fasciata) — Central-Place Foraging Efficiency
+#  Aucune limite géométrique artificielle (pas de max_range_from_nest) :
+#  l'oiseau maximise son Ratio d'Efficience Énergétique :
+#      Ratio(c) = E[Gain(c)] / (Coût_attaque + Coût_vol_marginal_aller_retour(c))
+#  sous la seule contrainte de son énergie disponible et de la durée du jour.
+# =============================================================================
+
+species_name: "Aquila fasciata"
+display_name: "Aigle de Bonelli"
+
+# -----------------------------------------------------------------------------
+#  MÉTABOLISME & COÛTS ÉNERGÉTIQUES (Unité : points de satiété S dans [0, 100])
+# -----------------------------------------------------------------------------
+metabolism:
+  max_satiety: 100.0
+  initial_satiety: 80.0
+  hunger_threshold: 65.0       # déclenche la recherche alimentaire si S < 65
+  basal_resting_cost: 9.0      # métabolisme journalier de base (repos / nuit)
+  active_step_cost: 0.85       # coût énergétique d'un déplacement d'1 case (500m)
+  hunt_attempt_cost: 1.8       # coût énergétique d'un piqué d'attaque (consomme aussi 1 pas de jour)
+  min_foraging_efficiency_ratio: 1.25  # Ratio minimal (Gain espéré / Coût total) pour partir/continuer à chasser
+
+# -----------------------------------------------------------------------------
+#  PERCEPTION & BUDGET DIURNE (Heures de lumière disponibles par jour)
+# -----------------------------------------------------------------------------
+movement:
+  vision_radius: 7             # rayon de perception visuelle (7 cases = 3.5 km autour de l'aigle)
+  max_daily_steps: 14          # budget diurne (durée du jour : déplacements + attaques avant la nuit)
+  resting_daily_steps: 1       # patrouille minimale si rassasié (S >= 65)
+  exploration_noise: 0.15      # incertitude perceptive sur le ratio d'efficience
+  recent_visit_penalty: 0.40   # pénalité mémorielle sur le ratio des cases tout juste traversées
+  memory_length: 6             # mémoire spatiale à court terme (en pas)
+
+# -----------------------------------------------------------------------------
+#  PHYSIQUE DE LA CHASSE & RÉGIME ALIMENTAIRE
+# -----------------------------------------------------------------------------
+foraging:
+  base_capture_prob: 0.40        # probabilité maximale de capture en milieu ouvert (veg=0, fear=0)
+  vegetation_penalty_exp: 1.25   # beta : visibilité = (1 - veg)^beta * (1 - fear)
+  fear_spike_on_attempt: 0.38    # hausse locale de la vigilance des proies après un piqué
+  fear_daily_decay: 0.12         # dissipation quotidienne de l'effarouchement
+
+  # Régime : preference = propension à cibler l'espèce | satiety_gain = valeur énergétique
+  diet:
+    lapin:   { preference: 1.0,  satiety_gain: 70.0, biomass_taken: 1.0 }
+    perdrix: { preference: 0.9,  satiety_gain: 50.0, biomass_taken: 1.0 }
+    pigeon:  { preference: 0.5,  satiety_gain: 35.0, biomass_taken: 1.0 }
+    lezard:  { preference: 0.2,  satiety_gain: 20.0, biomass_taken: 1.0 }
+
+# -----------------------------------------------------------------------------
+#  ÉTATS ONTOGÉNIQUES (Aucune limite de rayon imposée !)
+# -----------------------------------------------------------------------------
+life_states:
+  ADULTE_TERRITORIAL:
+    roost_topography: [3]             # nidifie et doit obligatoirement rentrer dormir sur son aire (falaise)
+    nest_selection_top_fraction: 0.08 # choisit au départ une falaise à haut rendement énergétique alentour
+
+  IMMATURE_DISPERSION:
+    spawn_topography: [0]             # émancipé en plaine, nomade sans contrainte de retour le soir
