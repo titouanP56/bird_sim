@@ -1,5 +1,7 @@
 """Génération procédurale corrélée des couches, en cascade :
-    Topographie (Terrasses calcaires + Falaises fines 1 case par NMS) -> Végétation -> Proies
+    Topographie (Chaînons calcaires plissés + Falaises fines NMS + Plateaux)
+    -> Végétation (modulée par le relief et l'exposition Adret/Ubac)
+    -> Proies
 """
 from __future__ import annotations
 
@@ -51,20 +53,14 @@ def _int_keys(mapping: Mapping[Any, Any]) -> Dict[int, Any]:
 
 
 def _thin_cliffs_nms(slope: np.ndarray, gy: np.ndarray, gx: np.ndarray) -> np.ndarray:
-    """Suppression des Non-Maxima (NMS type Canny) le long de la direction du gradient.
-
-    Une falaise est un objet linéaire (rupture de pente) et non une surface large :
-    une cellule (r, c) n'est conservée comme crête de pente que si sa pente `slope[r, c]`
-    est un maximum local par rapport à ses deux voisines situées en amont et en aval
-    de la ligne de plus grande pente. Garantit des barres rocheuses de 1 case d'épaisseur.
+    """Suppression des Non-Maxima (NMS) le long de la direction du gradient.
+    Garantit que les barres rocheuses (falaises) font exactement 1 case d'épaisseur.
     """
-    rows, cols = slope.shape
     angle = np.mod(np.rad2deg(np.arctan2(gy, gx)), 180.0)
 
     s_pad = np.pad(slope, 1, mode="edge")
     center = s_pad[1:-1, 1:-1]
 
-    # 4 directions quantifiées du gradient : Est-Ouest (0°), Diag NE-SO (45°), Nord-Sud (90°), Diag NO-SE (135°)
     d0 = (angle < 22.5) | (angle >= 157.5)
     d45 = (angle >= 22.5) & (angle < 67.5)
     d90 = (angle >= 67.5) & (angle < 112.5)
@@ -73,23 +69,18 @@ def _thin_cliffs_nms(slope: np.ndarray, gy: np.ndarray, gx: np.ndarray) -> np.nd
     n1 = np.zeros_like(slope)
     n2 = np.zeros_like(slope)
 
-    # Axe horizontal (voisin gauche / droite)
     n1[d0] = s_pad[1:-1, :-2][d0]
     n2[d0] = s_pad[1:-1, 2:][d0]
 
-    # Diagonale 45°
     n1[d45] = s_pad[:-2, :-2][d45]
     n2[d45] = s_pad[2:, 2:][d45]
 
-    # Axe vertical (voisin haut / bas)
     n1[d90] = s_pad[:-2, 1:-1][d90]
     n2[d90] = s_pad[2:, 1:-1][d90]
 
-    # Diagonale 135°
     n1[d135] = s_pad[:-2, 2:][d135]
     n2[d135] = s_pad[2:, :-2][d135]
 
-    # Maximum local strict d'un côté, large de l'autre (évite d'effacer les crêtes symétriques)
     return (center >= n1) & (center > n2)
 
 
@@ -112,30 +103,42 @@ class EnvironmentGenerator:
         )
 
         phase = self.rng.uniform(0, 2 * np.pi)
-        y_ridge = p.get("ridge_center", 0.5) + p.get("ridge_sinuosity", 0.05) * np.sin(
-            2 * np.pi * 1.5 * x + phase
-        )
-        dy = y - y_ridge
+        sin_wave = p.get("ridge_sinuosity", 0.045) * np.sin(2 * np.pi * 1.5 * x + phase)
+        y_main = p.get("ridge_center", 0.44) + sin_wave
+        dy_main = y - y_main
 
-        half_len = max(p.get("ridge_length", 0.8) / 2.0, 1e-6)
+        half_len = max(p.get("ridge_length", 0.82) / 2.0, 1e-6)
         taper = np.exp(-(((x - 0.5) / half_len) ** 6))
 
-        # Massif calcaire à sommet tabulaire (causse / plateau sommital)
-        ridge_raw = np.exp(-0.5 * (dy / p.get("ridge_width", 0.11)) ** 2)
-        flatness = float(p.get("ridge_flatness", 1.45))
-        ridge = np.clip(ridge_raw * flatness, 0.0, 1.0)
+        # 1. Chaînon calcaire principal étroit à sommet tabulaire
+        w_main = float(p.get("ridge_width", 0.075))
+        ridge_main = np.exp(-0.5 * (dy_main / w_main) ** 2)
+        flatness = float(p.get("ridge_flatness", 1.35))
+        ridge_main = np.clip(ridge_main * flatness, 0.0, 1.0)
 
-        # Fonction de terrasse sigmoïde sur les flancs pour créer de vraies cuestas calcaires
-        sharpness = float(p.get("terrace_sharpness", 5.0))
+        # 2. Second chaînon calcaire parallèle au Sud (structure plissée des Alpilles)
+        sec_offset = float(p.get("secondary_ridge_offset", 0.14))
+        w_sec = float(p.get("secondary_ridge_width", 0.055))
+        sec_strength = float(p.get("secondary_ridge_strength", 0.65))
+        y_sec = y_main + sec_offset + 0.02 * np.cos(2 * np.pi * 2.0 * x + phase)
+        ridge_sec = sec_strength * np.exp(-0.5 * ((y - y_sec) / w_sec) ** 2)
+        ridge_sec = np.clip(ridge_sec * flatness, 0.0, 1.0)
+
+        ridges = np.maximum(ridge_main, ridge_sec)
+
+        # Fonction de cuesta (rupture de pente franche sur les flancs calcaires)
+        sharpness = float(p.get("terrace_sharpness", 6.0))
         if sharpness > 0:
-            ridge = 0.65 * ridge + 0.35 * (1.0 / (1.0 + np.exp(-sharpness * (ridge - 0.55))))
+            ridges = 0.60 * ridges + 0.40 * (1.0 / (1.0 + np.exp(-sharpness * (ridges - 0.52))))
 
-        piedmont = np.exp(-0.5 * (dy / p.get("plateau_width", 0.25)) ** 2)
-        piedmont = np.clip(piedmont * 1.6, 0.0, 1.0)
+        # 3. Vastes plateaux calcaires de piémont et combes intérieures
+        y_mid = 0.5 * (y_main + y_sec)
+        piedmont = np.exp(-0.5 * ((y - y_mid) / p.get("plateau_width", 0.26)) ** 2)
+        piedmont = np.clip(piedmont * 1.65, 0.0, 1.0)
 
-        relief = (ridge + p.get("plateau_strength", 0.48) * piedmont) * taper
-        relief += p.get("noise_amplitude", 0.18) * smooth_noise(
-            self.shape, p.get("noise_sigma", 3.0), self.rng
+        relief = (ridges + p.get("plateau_strength", 0.52) * piedmont) * taper
+        relief += p.get("noise_amplitude", 0.16) * smooth_noise(
+            self.shape, p.get("noise_sigma", 2.6), self.rng
         )
         elevation = _normalize(relief)
 
@@ -143,25 +146,25 @@ class EnvironmentGenerator:
         slope = np.hypot(gx, gy)
 
         upland_min = float(
-            p.get("upland_min_elevation", self.topo_types.get(1, {}).get("min_elevation", 0.28))
+            p.get("upland_min_elevation", self.topo_types.get(1, {}).get("min_elevation", 0.25))
         )
         cliff_min = float(
-            p.get("cliff_min_elevation", self.topo_types.get(3, {}).get("min_elevation", 0.22))
+            p.get("cliff_min_elevation", self.topo_types.get(3, {}).get("min_elevation", 0.26))
         )
-        hill_thr = float(p.get("hill_slope_threshold", 0.032))
-        cliff_thr = float(p.get("cliff_slope_threshold", 0.052))
+        hill_thr = float(p.get("hill_slope_threshold", 0.048))
+        cliff_thr = float(p.get("cliff_slope_threshold", 0.056))
 
         types = np.zeros(self.shape, dtype=int)  # 0 : Plaine
 
-        # 1 : Plateau (hauteur + pente faible : replats de piémont et sommets plats)
+        # 1 : Plateau (replats calcaires de piémont, vallons intérieurs et sommets tabulaires)
         if 1 in self.topo_types:
             types[(elevation >= upland_min) & (slope < hill_thr)] = 1
 
-        # 2 : Versant (hauteur + pente modérée à forte hors ligne de rupture)
+        # 2 : Versant (uniquement les pentes soutenues entre plaine/plateau et crêtes)
         if 2 in self.topo_types:
             types[(elevation >= upland_min) & (slope >= hill_thr)] = 2
 
-        # 3 : Falaise (uniquement les lignes de rupture de pente de 1 case d'épaisseur via NMS)
+        # 3 : Falaise (lignes de rupture de pente de 1 case d'épaisseur via NMS)
         if 3 in self.topo_types:
             ridge_line = _thin_cliffs_nms(slope, gy, gx)
             is_cliff = (elevation >= cliff_min) & (slope >= cliff_thr) & ridge_line
@@ -190,7 +193,20 @@ class EnvironmentGenerator:
             vmax[m] = rule.get("max", 1.0)
 
         density = mean + amp * noise
-        density = gaussian_blur(density, p.get("smoothing_sigma", 0.0))
+
+        # Dissymétrie Adret (versant Sud sec et ouvert) vs Ubac (versant Nord plus boisé)
+        # Convention grille : ligne 0 = Nord, ligne 49 = Sud.
+        # Si gy > 0, l'altitude monte vers le Sud -> le versant regarde le Nord (Ubac : +végétation).
+        # Si gy < 0, l'altitude descend vers le Sud -> le versant regarde le Sud (Adret : -végétation).
+        aspect_inf = float(p.get("aspect_influence", 0.16))
+        if topo.elevation is not None and aspect_inf > 0.0:
+            gy, _ = np.gradient(topo.elevation)
+            norm_gy = np.tanh(gy / 0.04)  # borné dans [-1, +1]
+            # Appliqué principalement sur les Versants (2) et Plateaux (1)
+            upland_mask = (topo.types == 1) | (topo.types == 2)
+            density[upland_mask] += (aspect_inf * norm_gy)[upland_mask]
+
+        density = gaussian_blur(density, p.get("smoothing_sigma", 0.7))
         density = np.clip(density, vmin, vmax)
         return VegetationLayer(density=density)
 

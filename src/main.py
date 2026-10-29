@@ -1,14 +1,6 @@
-"""Point d'entrée - Étape 3 : satieté, chasse active, effarouchement & états.
-
-Usage :
-    python src/main.py                         # adulte + immature, 60 jours, dashboards
-    python src/main.py --state adult           # seulement l'adulte territorial
-    python src/main.py --state immature        # seulement l'immature en dispersion
-    python src/main.py --animate               # + animation jour par jour
-    python src/main.py --env-only              # cartes d'environnement (Étape 1)
-    python src/main.py --days 60 --seed 7 --save sim.png --save-gif sim.gif --no-show
+"""Point d'entrée - Simulation sur 3 ans (1095 jours) :
+Femelle adulte territoriale sur falaise + Mâle immature en plaine -> Couple & Reproduction.
 """
-
 from __future__ import annotations
 
 import argparse
@@ -26,18 +18,18 @@ DEFAULT_SPECIES = PROJECT_ROOT / "configs" / "species" / "bonelli.yaml"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Bird sim - Étape 3 : satieté & états de vie")
+    parser = argparse.ArgumentParser(description="Bird sim - Cycle de vie sur 3 ans, Couple & Reproduction")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="YAML environnement")
     parser.add_argument("--species", type=Path, default=DEFAULT_SPECIES, help="YAML espèce")
-    parser.add_argument("--days", type=int, default=60, help="Nombre de jours (ticks)")
+    parser.add_argument("--days", type=int, default=1095, help="Nombre de jours (défaut: 1095 = 3 ans)")
     parser.add_argument("--state", choices=["adult", "immature", "both"], default="both",
-                        help="État de vie simulé (both = adulte + immature côte à côte)")
+                        help="both = Femelle adulte sur falaise + Mâle immature en plaine")
     parser.add_argument("--seed", type=int, default=None,
                         help="Graine de la simulation (défaut : graine du monde)")
     parser.add_argument("--animate", action="store_true", help="Animation interactive jour par jour")
     parser.add_argument("--interval", type=int, default=120, help="Délai entre images (ms)")
     parser.add_argument("--env-only", action="store_true",
-                        help="N'afficher que les cartes d'environnement (Étape 1)")
+                        help="N'afficher que les cartes d'environnement")
     parser.add_argument("--save", type=str, default=None, help="Chemin PNG optionnel")
     parser.add_argument("--save-gif", type=str, default=None, help="Chemin GIF de l'animation")
     parser.add_argument("--no-show", action="store_true", help="Ne pas ouvrir de fenêtre")
@@ -66,6 +58,19 @@ def main() -> None:
         print(f"\n{e.name} apparaît en {e.position} (seed={sim.seed})")
     sim.run()
 
+    print("\n" + "=" * 72)
+    print("CHRONOLOGIE SOCIALE & REPRODUCTIVE (3 ANS)")
+    print("=" * 72)
+    for _, msg in sim.social_events:
+        print("  *", msg)
+    for pair_key, bnest in sim.breeding_nests.items():
+        print(f"  [Nid {bnest.nest_position} - Couple #{pair_key[0]} & #{pair_key[1]}] "
+              f"Total jeunes émancipés : {bnest.total_fledged}")
+        for d, ev in bnest.events_log:
+            y = ((d - 1) // 365) + 1
+            doy = ((d - 1) % 365) + 1
+            print(f"    - Jour {d:4d} (Année {y}, J{doy:03d}) : {ev}")
+
     def suffixed(path, tag):
         if not path or len(sim.eagles) == 1:
             return path
@@ -73,8 +78,9 @@ def main() -> None:
         return str(p.with_name(f"{p.stem}_{tag}{p.suffix}"))
 
     anims = []
+    # Affiche les dashboards des individus fondateurs (et des jeunes émancipés s'il y en a)
     for i, eagle in enumerate(sim.eagles):
-        tag = "adulte" if eagle.is_territorial else "immature"
+        tag = f"aigle{eagle.agent_id}_{eagle.sex}"
         print()
         print(sim.collectors[i].summary())
         dashboard.render_simulation_summary(sim, i, show=False,
@@ -83,8 +89,9 @@ def main() -> None:
             anims.append(dashboard.animate_simulation(
                 sim, i, interval_ms=args.interval,
                 save_gif=suffixed(args.save_gif, tag), show=False))
+
     if not args.no_show:
-        plt.show()  # ouvre les dashboards (+ animations si demandées) simultanément
+        plt.show()
     del anims
 
 

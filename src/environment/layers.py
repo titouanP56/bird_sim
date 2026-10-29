@@ -33,11 +33,9 @@ class TopographyLayer:
         return self.types.shape
 
     def mask(self, type_id: int) -> np.ndarray:
-        """Masque booléen des cellules d'un type de relief donné."""
         return self.types == type_id
 
     def proportions(self) -> Dict[int, float]:
-        """Fraction de la carte occupée par chaque type déclaré."""
         total = self.types.size
         ids = self.labels.keys() if self.labels else np.unique(self.types)
         return {int(i): float(np.count_nonzero(self.types == i)) / total for i in ids}
@@ -84,14 +82,12 @@ class PreyLayer:
         self._capacity[name] = self._densities[name].copy()
 
     def consume(self, species: str, y: int, x: int, amount: float) -> float:
-        """Retire `amount` individus de la case (y, x) ; retourne la quantité réellement prélevée."""
         d = self.get(species)
         taken = float(min(max(amount, 0.0), d[y, x]))
         d[y, x] -= taken
         return taken
 
     def regenerate_daily(self, regen_rate: float = 0.005) -> None:
-        """Croissance logistique quotidienne vers la densité initiale."""
         for name, d in self._densities.items():
             k = self._capacity[name]
             safe_k = np.where(k > 0, k, 1.0)
@@ -108,7 +104,6 @@ class PreyLayer:
             ) from exc
 
     def as_tensor(self) -> Tuple[np.ndarray, List[str]]:
-        """Empile les cartes en tenseur 3D (n_especes, H, W) + liste d'index."""
         names = self.species
         if not names:
             return np.zeros((0, *self._shape)), names
@@ -156,3 +151,39 @@ class FearLayer:
 
     def step_decay(self, decay_rate: float) -> None:
         self.fear = np.clip(self.fear - decay_rate, 0.0, self.max_fear)
+
+
+class TerritorialPresenceLayer:
+    """Carte dynamique de présence territoriale et de signalement visuel des résidents.
+
+    - `presence` (float [0, 1]) : intensité du marquage territorial (vols, parades, aire).
+    - `owner_id` (int) : identifiant du résident (ou du nid) dominant sur la case (0 si libre).
+    """
+
+    def __init__(self, shape: Tuple[int, int]) -> None:
+        self.presence = np.zeros(tuple(shape), dtype=float)
+        self.owner_id = np.zeros(tuple(shape), dtype=int)
+
+    @property
+    def shape(self) -> Tuple[int, int]:
+        return self.presence.shape
+
+    def deposit(self, y: int, x: int, territory_id: int, amount: float, radius: int = 2) -> None:
+        """Dépose une empreinte de présence autour de (y, x) avec décroissance radiale."""
+        rows, cols = self.presence.shape
+        y0, y1 = max(0, y - radius), min(rows, y + radius + 1)
+        x0, x1 = max(0, x - radius), min(cols, x + radius + 1)
+        yy, xx = np.ogrid[y0:y1, x0:x1]
+        dist = np.hypot(yy - y, xx - x)
+        mask = dist <= radius
+        gain = amount * np.exp(-0.5 * (dist / max(radius * 0.6, 1.0)) ** 2) * mask
+
+        sub_p = self.presence[y0:y1, x0:x1]
+        sub_o = self.owner_id[y0:y1, x0:x1]
+        takeover = gain > sub_p * 0.7
+        sub_o[takeover & mask] = int(territory_id)
+        np.clip(sub_p + gain, 0.0, 1.0, out=sub_p)
+
+    def step_decay(self, decay_rate: float = 0.08) -> None:
+        self.presence = np.clip(self.presence - decay_rate, 0.0, 1.0)
+        self.owner_id[self.presence < 0.05] = 0

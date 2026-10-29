@@ -1,18 +1,4 @@
-"""Déplacement guidé par le Ratio d'Efficience Énergétique (Central-Place Foraging Theory).
-
-Aucune limite de distance fixe (`max_range_from_nest` supprimé) :
-Pour toute case candidate `c` dans le disque de perception :
-1. Coût énergétique marginal de transport :
-   - Immature (nomade) : E_vol(c) = step_cost * d(pos, c)
-   - Adulte (retour au nid obligatoire le soir) :
-     E_vol(c) = step_cost * max(0, d(pos, c) + d(c, nid) - d(pos, nid))
-     (mesure le surcoût énergétique total de l'aller-retour induit par le choix de `c`).
-2. Ratio d'Efficience Énergétique (Ydenberg 1994) :
-     eta(c) = E[Gain](c) / (hunt_attempt_cost + E_vol(c))
-3. Contraintes physiques naturelles :
-   - Temps diurne : d(pos, c) + 1 (attaque) + d(c, nid) <= remaining_steps
-   - Énergie disponible : coût total aller-retour < satiété actuelle de l'aigle.
-"""
+"""Déplacement guidé par le Ratio d'Efficience Énergétique et l'avantage du vol plané."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
@@ -40,17 +26,18 @@ class ForagingMovement:
         mv = species_config.get("movement", {})
         fg = species_config.get("foraging", {})
         met = species_config.get("metabolism", {})
+        soc = species_config.get("social", {})
 
         self.vision_radius = int(mv.get("vision_radius", 7))
         self.beta = float(fg.get("vegetation_penalty_exp", 1.25))
         self.exploration_noise = float(mv.get("exploration_noise", 0.15))
-        self.recent_visit_penalty = float(mv.get("recent_visit_penalty", 0.40))
+        self.recent_visit_penalty = float(mv.get("recent_visit_penalty", 0.35))
         self.step_cost = float(met.get("active_step_cost", 0.85))
-        self.hunt_attempt_cost = float(met.get("hunt_attempt_cost", 1.8))
-        self.min_efficiency_ratio = float(met.get("min_foraging_efficiency_ratio", 1.25))
+        self.hunt_attempt_cost = float(met.get("hunt_attempt_cost", 1.5))
+        self.min_efficiency_ratio = float(met.get("min_foraging_efficiency_ratio", 0.80))
+        self.intruder_aversion = float(soc.get("intruder_presence_aversion", 2.5))
         self._peak_gain: Optional[float] = None
 
-    # ----------------------------------------------------------------- Helpers
     @staticmethod
     def _disk_offsets(radius: int) -> np.ndarray:
         r = np.arange(-radius, radius + 1)
@@ -70,13 +57,10 @@ class ForagingMovement:
     def step_toward(src: Cell, dst: Cell) -> Cell:
         return (src[0] + int(np.sign(dst[0] - src[0])), src[1] + int(np.sign(dst[1] - src[1])))
 
-    # ------------------------------------------------------------ Attractivité
-    def compute_expected_gain_map(self, world: WorldMap) -> np.ndarray:
-        """Espérance de gain brute E[Gain](y, x) en points de satiété."""
-        return compute_expected_gain_map(world, self.species_config)
+    def compute_expected_gain_map(self, world: WorldMap, tandem_bonus: float = 1.0) -> np.ndarray:
+        return compute_expected_gain_map(world, self.species_config, tandem_bonus=tandem_bonus)
 
     def compute_attractiveness_map(self, world: WorldMap) -> np.ndarray:
-        """Version normalisée dans [0, 1] de E[Gain](y, x) pour la compatibilité Dashboard."""
         eg = self.compute_expected_gain_map(world)
         if self._peak_gain is None:
             self._peak_gain = float(eg.max())
@@ -84,7 +68,6 @@ class ForagingMovement:
             return eg
         return np.clip(eg / self._peak_gain, 0.0, 1.0)
 
-    # -------------------------------------------------------------- Décision
     def evaluate_and_select_step(
         self,
         agent: "Eagle",
@@ -93,64 +76,71 @@ class ForagingMovement:
         rng: np.random.Generator,
         remaining_steps: int,
         hunting: bool,
+        social_goal: Optional[Cell] = None,
     ) -> Tuple[Cell, float]:
-        """Choisit le prochain pas `nxt` et retourne `(nxt, best_alternative_efficiency)`.
-        Aucune limite de distance codée en dur : seules la lumière du jour (`remaining_steps`),
-        l'énergie disponible (`agent.satiety`) et la rentabilité (`eta >= min_efficiency_ratio`)
-        régissent l'éloignement de l'aigle.
-        """
         pos = agent.position
         nest = agent.nest_position if agent.is_territorial else None
+        step_cost = agent.effective_step_cost
 
-        # Mode repos/patrouille : reste près du dortoir
+        if social_goal is not None and agent.satiety >= 45.0:
+            return self.step_toward(pos, social_goal), -1e9
+
         if not hunting:
             if nest is not None and chebyshev(pos, nest) >= remaining_steps:
                 return self.step_toward(pos, nest), 0.0
             cells = self.visible_cells(pos, world.grid_size, radius=1)
             if nest is not None:
                 d_nest = np.maximum(np.abs(cells[:, 0] - nest[0]), np.abs(cells[:, 1] - nest[1]))
-                cells = cells[d_nest <= remaining_steps - 1]
+                cells = cells[d_nest <= min(2, remaining_steps - 1)]
                 if len(cells) == 0:
                     return self.step_toward(pos, nest), 0.0
             idx = int(rng.integers(len(cells)))
             return (int(cells[idx, 0]), int(cells[idx, 1])), 0.0
 
-        # Mode chasse : évalue les cases visibles
         cells = self.visible_cells(pos, world.grid_size, self.vision_radius)
         d_cur = np.maximum(np.abs(cells[:, 0] - pos[0]), np.abs(cells[:, 1] - pos[1]))
 
         if nest is not None:
             cur_to_nest = chebyshev(pos, nest)
             d_nest = np.maximum(np.abs(cells[:, 0] - nest[0]), np.abs(cells[:, 1] - nest[1]))
-            # Coût marginal de détour aller-retour : aller en `c` puis rentrer au nid vs rentrer maintenant
-            extra_flight_steps = np.maximum(0, d_cur + d_nest - cur_to_nest)
-            total_trip_energy = self.hunt_attempt_cost + self.step_cost * (d_cur + d_nest)
-
-            # Faisabilité purement physique : avant la tombée de la nuit ET avant épuisement énergétique
+            total_trip_energy = self.hunt_attempt_cost + step_cost * (d_cur + d_nest)
             feasible = (
                 (d_nest > 0)
                 & (d_cur + 1 + d_nest <= remaining_steps)
                 & (total_trip_energy < agent.satiety)
             )
         else:
-            extra_flight_steps = d_cur
-            total_trip_energy = self.hunt_attempt_cost + self.step_cost * d_cur
+            total_trip_energy = self.hunt_attempt_cost + step_cost * d_cur
             feasible = (d_cur + 1 <= remaining_steps) & (total_trip_energy < agent.satiety)
 
         if not np.any(feasible):
-            # Il est l'heure de rentrer au nid avant la nuit (ou plus assez d'énergie)
             if nest is not None and pos != nest:
                 return self.step_toward(pos, nest), -1e9
             return pos, -1e9
 
         cand = cells[feasible]
         cand_d_cur = d_cur[feasible]
-        cand_extra_steps = extra_flight_steps[feasible]
 
-        # Calcul du Ratio d'Efficience Énergétique : eta(c) = E[Gain](c) / Coût_marginal_total(c)
         raw_gains = expected_gain_map[cand[:, 0], cand[:, 1]].astype(float)
-        marginal_costs = self.hunt_attempt_cost + self.step_cost * cand_extra_steps
-        efficiencies = raw_gains / np.maximum(marginal_costs, 1e-6)
+        if nest is not None:
+            cand_d_nest = np.maximum(np.abs(cand[:, 0] - nest[0]), np.abs(cand[:, 1] - nest[1]))
+            total_costs = self.hunt_attempt_cost + step_cost * (cand_d_cur + cand_d_nest + cur_to_nest)
+        else:
+            total_costs = self.hunt_attempt_cost + step_cost * cand_d_cur
+
+        if not agent.is_territorial and agent.state == "IMMATURE_DISPERSION":
+            pres = world.presence_layer.presence[cand[:, 0], cand[:, 1]]
+            total_costs = total_costs * (1.0 + self.intruder_aversion * pres)
+
+        efficiencies = raw_gains / np.maximum(total_costs, 1e-6)
+
+        if social_goal is not None:
+            d_goal_now = chebyshev(pos, social_goal)
+            d_goal_cand = np.maximum(
+                np.abs(cand[:, 0] - social_goal[0]),
+                np.abs(cand[:, 1] - social_goal[1]),
+            )
+            efficiencies += 0.35 * np.sign(d_goal_now - d_goal_cand)
 
         if self.recent_visit_penalty and agent.recent_positions:
             recent = set(agent.recent_positions)
@@ -159,19 +149,13 @@ class ForagingMovement:
             )
             efficiencies -= self.recent_visit_penalty * visited
 
-        # Filtre de rentabilité énergétique : un prédateur ne se déplace pas à perte
-        profitable = efficiencies >= self.min_efficiency_ratio
-        if not np.any(profitable):
-            if nest is not None and pos != nest:
-                return self.step_toward(pos, nest), -1e9
-            return pos, -1e9
-
         noisy_eff = efficiencies.copy()
         if self.exploration_noise > 0:
             noisy_eff += rng.uniform(0.0, self.exploration_noise, size=len(cand))
 
-        # Meilleure efficience *ailleurs* que sur la case courante (d_cur > 0)
-        other_mask = (cand_d_cur > 0) & profitable
+        # Toujours considérer la meilleure alternative hors de la case courante
+        # (pas de grève de la faim : l'aigle choisit la moins mauvaise option s'il a faim)
+        other_mask = cand_d_cur > 0
         best_alt_efficiency = float(efficiencies[other_mask].max()) if np.any(other_mask) else -1e9
 
         if np.any(other_mask):
@@ -184,22 +168,6 @@ class ForagingMovement:
         target: Cell = (int(best_cell[0]), int(best_cell[1]))
         nxt = self.step_toward(pos, target)
 
-        # Sécurité crépusculaire : pouvoir toujours rejoindre le nid avant la fin du jour
         if nest is not None and chebyshev(nxt, nest) > remaining_steps - 1:
             nxt = self.step_toward(pos, nest)
         return nxt, best_alt_efficiency
-
-    def select_next_step(
-        self,
-        agent: "Eagle",
-        world: WorldMap,
-        attractiveness_map: np.ndarray,
-        rng: np.random.Generator,
-        remaining_steps: int = 1,
-        hunting: bool = True,
-    ) -> Cell:
-        eg_map = self.compute_expected_gain_map(world)
-        nxt, _ = self.evaluate_and_select_step(
-            agent, world, eg_map, rng, remaining_steps, hunting
-        )
-        return nxt

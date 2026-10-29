@@ -8,11 +8,17 @@ import numpy as np
 import yaml
 
 from .generators import EnvironmentGenerator
-from .layers import FearLayer, PreyLayer, TopographyLayer, VegetationLayer
+from .layers import (
+    FearLayer,
+    PreyLayer,
+    TerritorialPresenceLayer,
+    TopographyLayer,
+    VegetationLayer,
+)
 
 
 class WorldMap:
-    """Environnement spatial complet (topographie, végétation, proies, effarouchement)."""
+    """Environnement spatial complet (topographie, végétation, proies, peur, territoires)."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self._config = config
@@ -26,6 +32,7 @@ class WorldMap:
             neighbor_share=float(fear_cfg.get("neighbor_share", 0.0)),
         )
         self._default_fear_decay = float(fear_cfg.get("default_daily_decay", 0.12))
+        self._presence = TerritorialPresenceLayer(self._topography.shape)
 
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "WorldMap":
@@ -87,13 +94,22 @@ class WorldMap:
         return self._fear
 
     @property
+    def presence_layer(self) -> TerritorialPresenceLayer:
+        return self._presence
+
+    @property
     def prey_regeneration_rate(self) -> float:
         return float(self._config.get("prey_dynamics", {}).get("regeneration_rate", 0.005))
 
     # ------------------------------------------------------------- Dynamique
-    def step_environment_day(self, fear_decay_rate: Optional[float] = None) -> None:
+    def step_environment_day(
+        self,
+        fear_decay_rate: Optional[float] = None,
+        presence_decay_rate: float = 0.08,
+    ) -> None:
         decay = self._default_fear_decay if fear_decay_rate is None else float(fear_decay_rate)
         self._fear.step_decay(decay)
+        self._presence.step_decay(presence_decay_rate)
         self._preys.regenerate_daily(self.prey_regeneration_rate)
 
     # ----------------------------------------------------------------- Matrices

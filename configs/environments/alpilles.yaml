@@ -1,7 +1,7 @@
 # =============================================================================
 #  Environnement : Massif des Alpilles (biome méditerranéen)
-#  Toute la génération spatiale est pilotée par ce fichier (approche data-driven).
-#  Convention de grille : [lignes (Nord -> Sud), colonnes (Ouest -> Est)]
+#  Géomorphologie calcaire plissée Est-Ouest, dissymétrie Adret (Sud) / Ubac (Nord).
+#  Convention de grille : [lignes (0=Nord -> 49=Sud), colonnes (0=Ouest -> 49=Est)]
 # =============================================================================
 
 biome_name: "Mediterranean - Alpilles"
@@ -10,39 +10,45 @@ cell_size_km: 0.5            # 1 case = 500m x 500m (25 ha) -> carte de 25 km x 
 seed: 42
 
 # -----------------------------------------------------------------------------
-#  TOPOGRAPHIE (Géomorphologie : Terrasses calcaires + Falaises fines NMS 1 case)
+#  TOPOGRAPHIE (Chaînons calcaires, Plateaux de garrigue, Versants & Falaises NMS)
 # -----------------------------------------------------------------------------
 topography_types:
   0: { name: "Plaine",   min_elevation: 0.00, color: "#e6d8a8" }
-  1: { name: "Plateau",  min_elevation: 0.28, color: "#c2a66b" }
-  2: { name: "Versant",  min_elevation: 0.24, color: "#8a6a4a" }
-  3: { name: "Falaise",  min_elevation: 0.22, color: "#4a4a52" }
+  1: { name: "Plateau",  min_elevation: 0.25, color: "#c2a66b" }
+  2: { name: "Versant",  min_elevation: 0.30, color: "#8a6a4a" }
+  3: { name: "Falaise",  min_elevation: 0.26, color: "#4a4a52" }
 
 topography_generation:
-  # Crête principale orientée Est-Ouest au centre de la carte
-  ridge_center: 0.5
-  ridge_width: 0.11
-  ridge_length: 0.80
-  ridge_sinuosity: 0.05
-  ridge_flatness: 1.45       # forme des plateaux calcaires sommitaux bien plats
-  terrace_sharpness: 5.0     # accentue la rupture de pente (cuesta calcaire) sur les rebords
+  # Chaînon principal Est-Ouest (ex: Crête de la Caume / Aupies)
+  ridge_center: 0.44
+  ridge_width: 0.075         # crête calcaire étroite et élancée (pas un gros dôme massif)
+  ridge_length: 0.82
+  ridge_sinuosity: 0.045
+  ridge_flatness: 1.35
+  terrace_sharpness: 6.0     # ruptures de pente franches (barres urgoniens / cuestas)
 
-  # Couronne de plateaux autour du massif
-  plateau_width: 0.25
-  plateau_strength: 0.48
+  # Second chaînon calcaire plus au Sud (séparé par un vallon / plateau intérieur)
+  secondary_ridge_offset: 0.14
+  secondary_ridge_width: 0.055
+  secondary_ridge_strength: 0.65
 
-  # Bruit spatial (relief secondaire : vallons, combes)
-  noise_sigma: 3.0
-  noise_amplitude: 0.18
+  # Vastes plateaux calcaires de piémont et replats (garrigues ouvertes autour des crêtes)
+  plateau_width: 0.26
+  plateau_strength: 0.52
+
+  # Bruit spatial (combes, vallons secs, collines secondaires)
+  noise_sigma: 2.6
+  noise_amplitude: 0.16
 
   # Seuils géomorphologiques (couple Altitude / Pente + NMS pour falaises de 1 case)
-  upland_min_elevation: 0.28   # transition Plaine -> Plateau / Versant
-  cliff_min_elevation: 0.22    # altitude minimale pour une barre rocheuse
-  hill_slope_threshold: 0.032  # pente séparant un Plateau plat (1) d'un Versant (2)
-  cliff_slope_threshold: 0.052 # seuil de rupture de pente pour extraire la ligne de Falaise (3)
+  upland_min_elevation: 0.25   # transition Plaine -> Plateau de piémont
+  cliff_min_elevation: 0.26    # altitude minimale d'une barre rocheuse
+  hill_slope_threshold: 0.048  # seules les vraies pentes marquées sont classées en Versant (2) ;
+                               # les pentes douces et replats restent en Plateau (1) !
+  cliff_slope_threshold: 0.056 # seuil de rupture de pente pour les barres de Falaise (3)
 
 # -----------------------------------------------------------------------------
-#  VÉGÉTATION (fermeture du milieu, 0.0 = nu, 1.0 = fermé)
+#  VÉGÉTATION (fermeture du milieu + effet d'exposition Adret Sud vs Ubac Nord)
 # -----------------------------------------------------------------------------
 vegetation_strata:
   - { name: "Clairière / Roche", min: 0.0, max: 0.2 }
@@ -52,13 +58,16 @@ vegetation_strata:
 vegetation_generation:
   noise_sigma: 2.0
   noise_amplitude: 0.18
-  smoothing_sigma: 0.8
+  smoothing_sigma: 0.7
+  # Effet Adret / Ubac : les pentes exposées au Sud (gy < 0) sont plus sèches et ouvertes
+  # (garrigue rocailleuse), tandis que les pentes Nord (gy > 0) sont plus boisées (pinèdes).
+  aspect_influence: 0.16
 
 vegetation_topography_rules:
-  0: { mean: 0.42, variability: 1.5, min: 0.05, max: 0.95 }  # Plaine : cultures, friches, bosquets
-  1: { mean: 0.30, variability: 0.8, min: 0.10, max: 0.58 }  # Plateau : garrigue ouverte calcaire
-  2: { mean: 0.48, variability: 1.1, min: 0.15, max: 0.88 }  # Versant : pentes caillouteuses & pinèdes
-  3: { mean: 0.06, variability: 0.3, min: 0.00, max: 0.18 }  # Falaise : paroi rocheuse
+  0: { mean: 0.38, variability: 1.4, min: 0.05, max: 0.90 }  # Plaine : friches, coussouls, cultures, bosquets
+  1: { mean: 0.28, variability: 0.8, min: 0.08, max: 0.55 }  # Plateau : garrigue basse très ouverte
+  2: { mean: 0.42, variability: 1.1, min: 0.12, max: 0.85 }  # Versant : ouvert au Sud (garrigue), boisé au Nord
+  3: { mean: 0.05, variability: 0.3, min: 0.00, max: 0.15 }  # Falaise : paroi calcaire nue
 
 # -----------------------------------------------------------------------------
 #  DYNAMIQUE ENVIRONNEMENTALE (Régénération & Effarouchement local)
@@ -72,7 +81,7 @@ fear_dynamics:
   default_daily_decay: 0.12  # dissipation quotidienne naturelle
 
 # -----------------------------------------------------------------------------
-#  PROIES (Densités et affinités écologiques réelles)
+#  PROIES (Densités et affinités écologiques réelles dans les Alpilles)
 # -----------------------------------------------------------------------------
 prey_generation:
   noise_sigma: 2.0
@@ -81,23 +90,23 @@ preys:
   lapin:
     display_name: "Lapin de garenne"
     max_density: 12.0
-    preferred_topography: { 0: 1.0, 1: 0.95, 2: 0.55, 3: 0.0 }
-    optimal_vegetation: [0.18, 0.50]
-    vegetation_tolerance: 0.12
+    preferred_topography: { 0: 1.0, 1: 1.0, 2: 0.65, 3: 0.0 }
+    optimal_vegetation: [0.15, 0.48]
+    vegetation_tolerance: 0.13
     noise_amplitude: 0.20
 
   perdrix:
     display_name: "Perdrix rouge"
-    max_density: 7.5
-    preferred_topography: { 0: 0.70, 1: 1.0, 2: 0.90, 3: 0.10 }
+    max_density: 8.0
+    preferred_topography: { 0: 0.65, 1: 1.0, 2: 0.95, 3: 0.15 }
     optimal_vegetation: [0.10, 0.45]
-    vegetation_tolerance: 0.12
+    vegetation_tolerance: 0.13
     noise_amplitude: 0.20
 
   lezard:
     display_name: "Lézard ocellé"
     max_density: 8.0
-    preferred_topography: { 0: 0.40, 1: 1.0, 2: 0.80, 3: 0.20 }
+    preferred_topography: { 0: 0.40, 1: 1.0, 2: 0.85, 3: 0.25 }
     optimal_vegetation: [0.05, 0.35]
     vegetation_tolerance: 0.12
     noise_amplitude: 0.25
@@ -105,7 +114,7 @@ preys:
   pigeon:
     display_name: "Pigeon biset / Palombe"
     max_density: 6.0
-    preferred_topography: { 0: 0.80, 1: 0.65, 2: 0.50, 3: 0.40 }
+    preferred_topography: { 0: 0.80, 1: 0.70, 2: 0.55, 3: 0.40 }
     optimal_vegetation: [0.05, 0.45]
     vegetation_tolerance: 0.20
     noise_amplitude: 0.15

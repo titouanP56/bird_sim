@@ -1,5 +1,4 @@
 """Collecte des données journalières de la simulation."""
-
 from __future__ import annotations
 
 from collections import Counter
@@ -27,25 +26,24 @@ class SimulationCollector:
 
         self.spawn_position: Cell | None = None
         self.days: List[int] = []
-        self.daily_positions: List[Cell] = []          # position de fin de journée
-        self.daily_substeps: List[List[Cell]] = []     # sous-étapes de chaque jour
+        self.daily_positions: List[Cell] = []
+        self.daily_substeps: List[List[Cell]] = []
         self.daily_mean_attractiveness: List[float] = []
-        self.daily_distance: List[float] = []          # en cellules (euclidien)
+        self.daily_distance: List[float] = []
         self.daily_topo_counts: List[Dict[int, int]] = []
         self.occupancy_grid = np.zeros(world.grid_size, dtype=int)
 
         self.daily_modes: List[str] = []
+        self.daily_states: List[str] = []
         self.daily_attempts: List[int] = []
         self.satiety_start: List[float] = []
         self.satiety_peak: List[float] = []
         self.satiety_end: List[float] = []
-        self.captures: List[Tuple[int, str]] = []      # (jour, espèce)
+        self.captures: List[Tuple[int, str]] = []
         self.died_on_day: Optional[int] = None
-
         self._fear_sum = np.zeros(world.grid_size, dtype=float)
         self._fear_days = 0
 
-    # -------------------------------------------------------------- Écriture
     def record_spawn(self, position: Cell) -> None:
         self.spawn_position = position
         self.occupancy_grid[position] += 1
@@ -54,6 +52,7 @@ class SimulationCollector:
         substeps = report.substeps
         topo = self.world.get_topography()
         path = np.array([start] + list(substeps))
+
         for cell in substeps:
             self.occupancy_grid[cell] += 1
 
@@ -70,6 +69,7 @@ class SimulationCollector:
         self.daily_topo_counts.append(counts)
 
         self.daily_modes.append(report.mode)
+        self.daily_states.append(report.state)
         self.daily_attempts.append(report.attempts)
         self.satiety_start.append(report.satiety_start)
         self.satiety_peak.append(report.satiety_peak)
@@ -83,16 +83,13 @@ class SimulationCollector:
         self._fear_sum += fear
         self._fear_days += 1
 
-    # --------------------------------------------------------------- Lecture
     @property
     def full_path(self) -> List[Cell]:
-        """Spawn + toutes les sous-étapes dans l'ordre chronologique."""
         head = [self.spawn_position] if self.spawn_position is not None else []
         return head + [c for day in self.daily_substeps for c in day]
 
     @property
     def step_times(self) -> np.ndarray:
-        """Jour (fractionnaire) d'arrivée de chaque sous-étape de `full_path[1:]`."""
         t: List[float] = []
         for day, sub in zip(self.days, self.daily_substeps):
             n = len(sub)
@@ -107,7 +104,6 @@ class SimulationCollector:
         return Counter(sp for _, sp in self.captures)
 
     def topo_time_fractions(self) -> np.ndarray:
-        """Matrice (n_jours, n_reliefs) des fractions de temps par relief."""
         m = np.array([[d[t] for t in self.topo_ids] for d in self.daily_topo_counts], dtype=float)
         return m / np.maximum(m.sum(axis=1, keepdims=True), 1)
 
@@ -116,6 +112,8 @@ class SimulationCollector:
         return {t: sum(d[t] for d in self.daily_topo_counts) / n for t in self.topo_ids}
 
     def summary(self) -> str:
+        if not self.days:
+            return "Aucune journée enregistrée."
         types = self.world.topography_types
         visited = int((self.occupancy_grid > 0).sum())
         total_cells = self.occupancy_grid.size
@@ -123,22 +121,31 @@ class SimulationCollector:
         n_steps = max(sum(totals.values()), 1)
         favourite = max(totals, key=totals.get)
         hunt = sum(m == "CHASSE_ACTIVE" for m in self.daily_modes)
-        rest = len(self.daily_modes) - hunt
+        display = sum(m == "PARADE_NUPTIALE" for m in self.daily_modes)
+        inc = sum(m == "INCUBATION_NID" for m in self.daily_modes)
+        rest = len(self.daily_modes) - hunt - display - inc
         diet = self.diet_counts()
         name = self.eagle.name if self.eagle is not None else "Aigle"
         status = (f"MORT d'inanition au jour {self.died_on_day}" if self.died_on_day
                   else f"vivant (S finale = {self.satiety_end[-1]:.0f})")
+        partner_str = (
+            f"En couple avec #{self.eagle.partner_id} (Nid {self.eagle.nest_position})"
+            if self.eagle and self.eagle.partner_id
+            else "Célibataire"
+        )
+        soc_str = (
+            f"défenses={self.eagle.defense_count}, expulsions subies={self.eagle.expelled_count}"
+            if self.eagle else ""
+        )
         lines = [
             f"=== {name} : {status} ===",
-            f"Simulation : {len(self.days)} jours  |  {n_steps} déplacements",
-            f"  Jours chasse / repos: {hunt} / {rest}  |  tentatives : {sum(self.daily_attempts)}",
-            f"  Captures            : {len(self.captures)}  "
+            f"  Statut social       : {partner_str}  |  {soc_str}",
+            f"  Durée suivie        : {len(self.days)} jours  |  {n_steps} déplacements",
+            f"  Activité (jours)    : Chasse={hunt}, Parade={display}, Incubation={inc}, Repos={rest}",
+            f"  Captures ({len(self.captures):3d})      : "
             + (", ".join(f"{k}={v}" for k, v in diet.items()) or "aucune"),
             f"  Cases visitées      : {visited} / {total_cells} ({visited / total_cells:.1%})",
-            f"  Attractivité moyenne: {np.mean(self.daily_mean_attractiveness):.3f}"
-            f"  (moyenne carte = {self.attractiveness_map.mean():.3f})",
-            f"  Distance totale     : {sum(self.daily_distance):.1f} cellules"
-            f"  ({np.mean(self.daily_distance):.1f} / jour)",
+            f"  Distance totale     : {sum(self.daily_distance):.1f} cell. ({np.mean(self.daily_distance):.1f} / jour)",
             f"  Relief préféré      : {types[favourite].get('name', favourite)}",
             "  Temps par relief    :",
         ]

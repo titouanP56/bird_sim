@@ -344,18 +344,20 @@ class Dashboard:
         prey_colors = {}
         palette = ["#ffd166", "#ef476f", "#4cc9f0", "#b5e48c", "#f4a261"]
         for day, sp in col.captures:
-            c = prey_colors.setdefault(sp, palette[len(prey_colors) % len(palette)])
-            ax.scatter([day - 0.5], [col.satiety_peak[day - 1]], s=70, c=c, edgecolors="black",
-                       linewidths=0.8, zorder=5,
-                       label=sp if sp not in ax.get_legend_handles_labels()[1] else None)
+            # Sécurité : vérifier que l'index existe dans les listes enregistrées
+            if day - 1 < len(col.satiety_peak):
+                peak_val = col.satiety_peak[day - 1]
+                c = prey_colors.setdefault(sp, palette[len(prey_colors) % len(palette)])
+                ax.scatter([day - 0.5], [peak_val], s=70, c=c, edgecolors="black",
+                    linewidths=0.8, zorder=5,
+                    label=sp if sp not in ax.get_legend_handles_labels()[1] else None)
         if col.died_on_day:
             ax.scatter([col.died_on_day], [0], marker="X", s=140, c="#ef476f",
-                       edgecolors="white", zorder=6, label="Mort")
+                edgecolors="white", zorder=6, label="Mort")
         ax.set_ylim(0, eagle.max_satiety + 4)
         ax.set_xlim(0, max(sim.n_days, 1))
         self._style_chart(ax, "Satieté S (zones bleues = repos)", xlabel="Jour", ylabel="Satieté")
-        ax.legend(fontsize=7, facecolor=_BG, edgecolor=_GRID, labelcolor=_FG, loc="lower right",
-                  ncol=2)
+        ax.legend(fontsize=7, facecolor=_BG, edgecolor=_GRID, labelcolor=_FG, loc="lower right", ncol=2)
 
     def _panel_activity_diet(self, fig, cell, sim: "Simulation", col, eagle) -> None:
         sub = cell.subgridspec(1, 2, width_ratios=[1, 1.5], wspace=0.45)
