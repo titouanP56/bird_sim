@@ -167,18 +167,24 @@ def find_courtship_target_or_mate(
         return best_mate.nest_position
 
     # Si aucun partenaire célibataire n'est détecté, un prospecteur mature cherche une falaise libre
+    # Si aucun partenaire célibataire n'est détecté, un prospecteur mature cherche une aire libre
     ont = prospector.species_config.get("ontogeny", {})
     if prospector.age_days >= int(ont.get("adult_maturity_age_days", 1095)):
         topo = world.get_topography()
-        cliff_cells = np.argwhere(
-            (topo == 3) & (world.presence_layer.owner_id == 0)
+        
+        # Récupération dynamique des reliefs de nidification de l'espèce
+        st_cfg = prospector.species_config.get("life_states", {}).get("ADULTE_TERRITORIAL", {})
+        roost_topo = st_cfg.get("roost_topography", [3])
+        
+        valid_cells = np.argwhere(
+            np.isin(topo, roost_topo) & (world.presence_layer.owner_id == 0)
         )
-        if len(cliff_cells) > 0:
+        if len(valid_cells) > 0:
             d_cliffs = np.maximum(
-                np.abs(cliff_cells[:, 0] - prospector.position[0]),
-                np.abs(cliff_cells[:, 1] - prospector.position[1]),
+                np.abs(valid_cells[:, 0] - prospector.position[0]),
+                np.abs(valid_cells[:, 1] - prospector.position[1]),
             )
-            nearby = cliff_cells[d_cliffs <= prospector.movement.vision_radius * 2]
+            nearby = valid_cells[d_cliffs <= prospector.movement.vision_radius * 2]
             if len(nearby) > 0:
                 idx = int(rng.integers(len(nearby)))
                 target = (int(nearby[idx, 0]), int(nearby[idx, 1]))

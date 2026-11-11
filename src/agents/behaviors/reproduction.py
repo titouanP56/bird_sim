@@ -68,7 +68,9 @@ class BreedingNest:
         if self.stage in (STAGE_NONE, STAGE_COURTSHIP) and lay_start <= day_of_year <= lay_end:
             if self.last_Attempt_year < year and female.satiety >= min_sat and male.satiety >= 55.0:
                 probs = repro_cfg.get("clutch_size_probs", [0.35, 0.65])
-                self.num_chicks = int(rng.choice([1, 2], p=probs))
+                # Permet de gérer [1.0] (1 oeuf max, Circaète) ou [0.1, 0.6, 0.3] (jusqu'à 3 oeufs, Grand-Duc)
+                clutch_sizes = list(range(1, len(probs) + 1))
+                self.num_chicks = int(rng.choice(clutch_sizes, p=probs))
                 self.stage = STAGE_INCUBATION
                 self.days_in_stage = 0
                 self.brood_satiety = float(repro_cfg.get("chick_Initial_satiety", 80.0))
