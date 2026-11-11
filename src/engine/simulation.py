@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
-
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
+
+if TYPE_CHECKING:  # pragma: no cover
+    from src.analytics.telemetry import TelemetryLogger
 
 from src.agents.behaviors.reproduction import (
     STAGE_INCUBATION,
@@ -28,6 +30,7 @@ class Simulation:
         seed: Optional[int] = None,
         states: Sequence[str] = (ADULT, IMMATURE),
         initial_specs: Optional[List[Dict[str, Any]]] = None,
+        telemetry: Optional["TelemetryLogger"] = None,
     ) -> None:
         if not isinstance(species_config, dict):
             species_config = load_species_config(species_config)
@@ -77,6 +80,9 @@ class Simulation:
 
         self.breeding_nests: Dict[Tuple[int, int], BreedingNest] = {}
         self.social_events: List[Tuple[int, str]] = []
+        self.telemetry: Optional["TelemetryLogger"] = telemetry
+        if self.telemetry is not None:
+            self.telemetry.on_simulation_start(self.world, self.eagles, self.seed)
 
     @property
     def eagle(self) -> Eagle:
@@ -166,6 +172,7 @@ class Simulation:
                 )
 
         # 2. Action journalière de chaque aigle
+        daily_reports: Dict[int, Any] = {}
         for eagle, col in zip(self.eagles, self.collectors):
             if not eagle.alive:
                 continue
@@ -176,11 +183,21 @@ class Simulation:
                 all_eagles=self.eagles, partner=partner,
             )
             col.record_day(self.day, report, start)
+            daily_reports[eagle.agent_id] = (start, report)
 
         self._sync_breeding_nests()
 
         for col in self.collectors:
             col.record_fear(self.world.fear_layer.fear)
+
+        if self.telemetry is not None:
+            self.telemetry.log_step(
+                day=self.day,
+                world=self.world,
+                eagles=self.eagles,
+                daily_reports=daily_reports,
+                breeding_nests=self.breeding_nests,
+            )
 
         fg_decay = float(self.species_config.get("foraging", {}).get("fear_daily_decay", 0.12))
         pr_decay = float(self.species_config.get("social", {}).get("presence_daily_decay", 0.08))
@@ -193,4 +210,6 @@ class Simulation:
             if not any(e.alive for e in self.eagles):
                 break
             self.step()
+        if self.telemetry is not None:
+            self.telemetry.finalize(self.world, self.breeding_nests, self.social_events)
         return self.collectors

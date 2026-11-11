@@ -1,4 +1,4 @@
-"""Stratégie de génération de relief : Massif calcaire plissé (type Alpilles).
+﻿"""Stratégie de génération de relief : Massif calcaire plissé (type Alpilles).
 Génère un double chaînon Est-Ouest avec des plateaux de piémont.
 """
 from typing import Any, Mapping, Tuple
@@ -57,5 +57,5 @@ def generate_elevation(
     relief += p.get("noise_amplitude", 0.16) * smooth_noise(
         shape, p.get("noise_sigma", 2.6), rng
     )
-    
+
     return _normalize(relief)

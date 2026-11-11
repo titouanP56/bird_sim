@@ -5,7 +5,7 @@
 # =============================================================================
 
 biome_name: "Mediterranean - Alpilles"
-terrain_archetype: "terrains/alpilles.py"   # <- Indique le fichier de stratégie à importer
+terrain_archetype: "alpilles"            # Nom du module de stratégie : src/environment/terrails/<nom>.py
 grid_size: [50, 50]
 cell_size_km: 0.5            # 1 case = 500m x 500m (25 ha) -> carte de 25 km x 25 km
 seed: 42
