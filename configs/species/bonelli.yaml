@@ -1,0 +1,100 @@
+# =============================================================================
+#  Espèce : Aigle de Bonelli (Aquila fasciata) — Cycle de Vie, Social & Reproduction
+# =============================================================================
+
+species_name: "Aquila fasciata"
+display_name: "Aigle de Bonelli"
+
+# -----------------------------------------------------------------------------
+#  MÉTABOLISME & COÛTS ÉNERGÉTIQUES (Unité : points de satiété S dans [0, 100])
+# -----------------------------------------------------------------------------
+metabolism:
+  max_satiety: 100.0
+  initial_satiety: 85.0
+  hunger_threshold: 65.0               # déclenche la recherche alimentaire si S < 65
+  basal_resting_cost: 8.0              # métabolisme journalier de base (repos / nuit)
+  courtship_extra_cost: 1.2            # léger surcoût des vols en festons (portés par les ascendances de falaise)
+  active_step_cost: 0.85               # coût énergétique d'un déplacement d'1 case en vol battu (plaine)
+  cliff_gliding_discount: 0.45         # réduction de 55% du coût de vol pour un aigle partant d'une falaise (vol plané/orographique)
+  hunt_attempt_cost: 1.5               # coût énergétique d'un piqué d'attaque
+  min_foraging_efficiency_ratio: 0.80  # seuil de base (modulé à la baisse si l'oiseau est affamé)
+
+# -----------------------------------------------------------------------------
+#  PERCEPTION & BUDGET DIURNE (Photopériode saisonnière)
+# -----------------------------------------------------------------------------
+movement:
+  vision_radius: 7             # rayon de perception visuelle (7 cases = 3.5 km)
+  max_daily_steps: 14          # budget diurne moyen à l'équinoxe
+  seasonal_step_amplitude: 2   # variation hiver/été (+/- 2 pas selon la photopériode)
+  resting_daily_steps: 1       # patrouille / parade autour du nid si rassasié
+  exploration_noise: 0.15      # incertitude perceptive sur le ratio d'efficience
+  recent_visit_penalty: 0.35   # pénalité mémorielle à court terme
+  memory_length: 6             # mémoire spatiale à court terme (en pas)
+
+# -----------------------------------------------------------------------------
+#  PHYSIQUE DE LA CHASSE & RÉGIME ALIMENTAIRE
+# -----------------------------------------------------------------------------
+foraging:
+  base_capture_prob: 0.45        # probabilité maximale de capture en milieu ouvert
+  tandem_prob_multiplier: 1.50   # bonus de chasse coopérative en couple (+50%)
+  tandem_share_ratio: 0.58       # part du gain reçue par chaque partenaire lors d'un partage
+  vegetation_penalty_exp: 1.25   # beta : visibilité = (1 - veg)^beta * (1 - fear)
+  fear_spike_on_attempt: 0.32    # hausse locale de la vigilance des proies après un piqué
+  fear_daily_decay: 0.14         # dissipation quotidienne de l'effarouchement
+
+  diet:
+    lapin:   { preference: 1.0,  satiety_gain: 72.0, biomass_taken: 1.0 }
+    perdrix: { preference: 0.9,  satiety_gain: 52.0, biomass_taken: 1.0 }
+    pigeon:  { preference: 0.5,  satiety_gain: 38.0, biomass_taken: 1.0 }
+    lezard:  { preference: 0.2,  satiety_gain: 22.0, biomass_taken: 1.0 }
+
+# -----------------------------------------------------------------------------
+#  COMPORTEMENTS SOCIAUX : TERRITOIRE, PARADE & APPARIEMENT
+# -----------------------------------------------------------------------------
+social:
+  presence_deposit_resident: 0.35   # marquage territorial journalier autour de l'aire
+  presence_deposit_display: 0.65    # marquage renforcé lors d'un vol de parade nuptiale
+  presence_daily_decay: 0.08        # dissipation quotidienne de la trace territoriale
+  intruder_presence_aversion: 2.5   # poids répulsif des territoires occupés sur les immatures
+  defense_efficiency_threshold: 1.4 # seuil de rentabilité (Brown 1964) pour intercepter un intrus
+  defense_min_satiety: 45.0         # réserve minimale pour engager une poursuite territoriale
+  chase_energy_cost_resident: 3.5   # coût énergétique d'une expulsion pour le résident
+  chase_energy_cost_intruder: 8.0   # perte énergétique subie par l'intrus expulsé
+  expulsion_push_distance: 5        # recul forcé (en cases) de l'intrus hors de la zone
+  display_beacon_radius: 28         # portée visuelle (en cases = 14 km) d'un vol de parade
+
+# -----------------------------------------------------------------------------
+#  CYCLE DE REPRODUCTION ANNUEL (Calendrier phénologique : jour de l'année 1..365)
+# -----------------------------------------------------------------------------
+reproduction:
+  courtship_start_doy: 15           # 15 janvier : intensification des parades et recharge du nid
+  laying_window_start_doy: 45       # 14 février : début de la fenêtre de ponte
+  laying_window_end_doy: 85         # 26 mars : fin de la fenêtre de ponte
+  min_satiety_to_lay: 65.0          # condition corporelle minimale de la femelle pour pondre
+  clutch_size_probs: [0.35, 0.65]   # probabilité de pondre 1 ou 2 œufs
+  incubation_days: 40               # durée d'incubation (femelle au nid, mâle ravitailleur)
+  rearing_days: 65                  # élevage au nid avant l'envol (les deux parents chassent)
+  post_fledging_days: 35            # dépendance post-envol autour du nid avant émancipation
+  chick_daily_energy_demand: 14.0   # besoin énergétique quotidien par poussin
+  chick_max_satiety: 100.0
+  chick_Initial_satiety: 80.0
+
+# -----------------------------------------------------------------------------
+#  ONTÉGÉNIE & ÉTATS DE VIE (Âges en jours)
+# -----------------------------------------------------------------------------
+ontogeny:
+  emancipation_age_days: 100        # ~3.5 mois : quitte le nid parental -> IMMATURE_DISPERSION
+  subadult_prospector_age_days: 780 # ~2.1 ans : commence à prospecter les falaises et partenaires
+  adult_maturity_age_days: 1095     # 3 ans : maturité sexuelle complète
+
+life_states:
+  JUVENILE_DEPENDANT:
+    roost_topography: [3]
+  IMMATURE_DISPERSION:
+    spawn_topography: [0]
+  SUBADULTE_PROSPECTEUR:
+    spawn_topography: [0, 1]
+    roost_topography: [3]
+  ADULTE_TERRITORIAL:
+    roost_topography: [3]
+    nest_selection_top_fraction: 0.08

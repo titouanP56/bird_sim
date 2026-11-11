@@ -1,0 +1,121 @@
+# =============================================================================
+#  Environnement : Massif des Alpilles (biome méditerranéen)
+#  Géomorphologie calcaire plissée Est-Ouest, dissymétrie Adret (Sud) / Ubac (Nord).
+#  Convention de grille : [lignes (0=Nord -> 49=Sud), colonnes (0=Ouest -> 49=Est)]
+# =============================================================================
+
+biome_name: "Mediterranean - Alpilles"
+terrain_archetype: "alpilles"            # Nom du module de stratégie : src/environment/terrails/<nom>.py
+grid_size: [50, 50]
+cell_size_km: 0.5            # 1 case = 500m x 500m (25 ha) -> carte de 25 km x 25 km
+seed: 42
+
+# -----------------------------------------------------------------------------
+#  TOPOGRAPHIE (Chaînons calcaires, Plateaux de garrigue, Versants & Falaises NMS)
+# -----------------------------------------------------------------------------
+topography_types:
+  0: { name: "Plaine",   min_elevation: 0.00, color: "#e6d8a8" }
+  1: { name: "Plateau",  min_elevation: 0.25, color: "#c2a66b" }
+  2: { name: "Versant",  min_elevation: 0.30, color: "#8a6a4a" }
+  3: { name: "Falaise",  min_elevation: 0.26, color: "#4a4a52" }
+
+topography_generation:
+  # Chaînon principal Est-Ouest (ex: Crête de la Caume / Aupies)
+  ridge_center: 0.44
+  ridge_width: 0.075         # crête calcaire étroite et élancée (pas un gros dôme massif)
+  ridge_length: 0.82
+  ridge_sinuosity: 0.045
+  ridge_flatness: 1.35
+  terrace_sharpness: 6.0     # ruptures de pente franches (barres urgoniens / cuestas)
+
+  # Second chaînon calcaire plus au Sud (séparé par un vallon / plateau intérieur)
+  secondary_ridge_offset: 0.14
+  secondary_ridge_width: 0.055
+  secondary_ridge_strength: 0.65
+
+  # Vastes plateaux calcaires de piémont et replats (garrigues ouvertes autour des crêtes)
+  plateau_width: 0.26
+  plateau_strength: 0.52
+
+  # Bruit spatial (combes, vallons secs, collines secondaires)
+  noise_sigma: 2.6
+  noise_amplitude: 0.16
+
+  # Seuils géomorphologiques (couple Altitude / Pente + NMS pour falaises de 1 case)
+  upland_min_elevation: 0.25   # transition Plaine -> Plateau de piémont
+  cliff_min_elevation: 0.26    # altitude minimale d'une barre rocheuse
+  hill_slope_threshold: 0.048  # seules les vraies pentes marquées sont classées en Versant (2) ;
+                               # les pentes douces et replats restent en Plateau (1) !
+  cliff_slope_threshold: 0.056 # seuil de rupture de pente pour les barres de Falaise (3)
+
+# -----------------------------------------------------------------------------
+#  VÉGÉTATION (fermeture du milieu + effet d'exposition Adret Sud vs Ubac Nord)
+# -----------------------------------------------------------------------------
+vegetation_strata:
+  - { name: "Clairière / Roche", min: 0.0, max: 0.2 }
+  - { name: "Garrigue",          min: 0.2, max: 0.6 }
+  - { name: "Forêt / Pinède",    min: 0.6, max: 1.0 }
+
+vegetation_generation:
+  noise_sigma: 2.0
+  noise_amplitude: 0.18
+  smoothing_sigma: 0.7
+  # Effet Adret / Ubac : les pentes exposées au Sud (gy < 0) sont plus sèches et ouvertes
+  # (garrigue rocailleuse), tandis que les pentes Nord (gy > 0) sont plus boisées (pinèdes).
+  aspect_influence: 0.16
+
+vegetation_topography_rules:
+  0: { mean: 0.38, variability: 1.4, min: 0.05, max: 0.90 }  # Plaine : friches, coussouls, cultures, bosquets
+  1: { mean: 0.28, variability: 0.8, min: 0.08, max: 0.55 }  # Plateau : garrigue basse très ouverte
+  2: { mean: 0.42, variability: 1.1, min: 0.12, max: 0.85 }  # Versant : ouvert au Sud (garrigue), boisé au Nord
+  3: { mean: 0.05, variability: 0.3, min: 0.00, max: 0.15 }  # Falaise : paroi calcaire nue
+
+# -----------------------------------------------------------------------------
+#  DYNAMIQUE ENVIRONNEMENTALE (Régénération & Effarouchement local)
+# -----------------------------------------------------------------------------
+prey_dynamics:
+  regeneration_rate: 0.025   # taux de croissance logistique quotidien r
+
+fear_dynamics:
+  max_fear: 0.90             # plafond d'effarouchement d'une case
+  neighbor_share: 0.0        # 1 case = 500m : la peur reste strictement locale à la case attaquée
+  default_daily_decay: 0.12  # dissipation quotidienne naturelle
+
+# -----------------------------------------------------------------------------
+#  PROIES (Densités et affinités écologiques réelles dans les Alpilles)
+# -----------------------------------------------------------------------------
+prey_generation:
+  noise_sigma: 2.0
+
+preys:
+  lapin:
+    display_name: "Lapin de garenne"
+    max_density: 12.0
+    preferred_topography: { 0: 1.0, 1: 1.0, 2: 0.65, 3: 0.0 }
+    optimal_vegetation: [0.15, 0.48]
+    vegetation_tolerance: 0.13
+    noise_amplitude: 0.20
+
+  perdrix:
+    display_name: "Perdrix rouge"
+    max_density: 8.0
+    preferred_topography: { 0: 0.65, 1: 1.0, 2: 0.95, 3: 0.15 }
+    optimal_vegetation: [0.10, 0.45]
+    vegetation_tolerance: 0.13
+    noise_amplitude: 0.20
+
+  lezard:
+    display_name: "Lézard ocellé"
+    max_density: 8.0
+    preferred_topography: { 0: 0.40, 1: 1.0, 2: 0.85, 3: 0.25 }
+    optimal_vegetation: [0.05, 0.35]
+    vegetation_tolerance: 0.12
+    noise_amplitude: 0.25
+
+  pigeon:
+    display_name: "Pigeon biset / Palombe"
+    max_density: 6.0
+    preferred_topography: { 0: 0.80, 1: 0.70, 2: 0.55, 3: 0.40 }
+    optimal_vegetation: [0.05, 0.45]
+    vegetation_tolerance: 0.20
+    noise_amplitude: 0.15
