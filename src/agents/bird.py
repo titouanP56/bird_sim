@@ -328,12 +328,13 @@ class Eagle:
                     continue
                 break
 
+
             if (
                 in_tandem
                 and partner is not None
                 and partner.position != self.position
+                and partner.position != self.nest_position
                 and chebyshev(self.position, partner.position) <= 3
-                and self.sex == "M"
                 and not partner_incubating
             ):
                 nxt = self.movement.step_toward(self.position, partner.position)
