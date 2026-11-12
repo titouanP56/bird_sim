@@ -1,13 +1,13 @@
 """Module de télémétrie découplé (Pattern Observer) pour la simulation Bonelli-IBM.
 
-Accumule les états journaliers et sous-étapes en structures Python natives légères
-pendant l'exécution, puis compile des pandas.DataFrame typés (int16/float32/category)
-pour l'analyse interactive sans fuite de mémoire.
+Accumule les états journaliers, sous-étapes, territoires cumulés et événements
+reproducteurs en structures Python légères, puis compile des pandas.DataFrame
+typés (int16/float32/category) en fin de simulation.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -33,6 +33,7 @@ class CompiledTelemetry:
     defense_events_df: pd.DataFrame
     repro_events_df: pd.DataFrame
     agent_metadata: Dict[int, Dict[str, Any]]
+    agent_occupancy_grids: Dict[int, np.ndarray]
     topography_names: Dict[int, str]
     topography_colors: Dict[int, str]
     elevation_grid: np.ndarray
@@ -51,11 +52,7 @@ class CompiledTelemetry:
 
 
 class TelemetryLogger:
-    """Observateur passif du moteur de simulation.
-
-    Stocke les observations jour par jour dans des listes de dictionnaires plats
-    et génère un objet `CompiledTelemetry` à la fin du run.
-    """
+    """Observateur passif du moteur de simulation."""
 
     def __init__(self) -> None:
         self._daily_records: List[Dict[str, Any]] = []
@@ -63,10 +60,12 @@ class TelemetryLogger:
         self._capture_records: List[Dict[str, Any]] = []
         self._defense_records: List[Dict[str, Any]] = []
         self._agent_meta: Dict[int, Dict[str, Any]] = {}
+        self._agent_occupancy: Dict[int, np.ndarray] = {}
         self._prev_defense_counts: Dict[int, int] = {}
         self._prev_expelled_counts: Dict[int, int] = {}
 
         self._fear_accumulator: Optional[np.ndarray] = None
+        self._presence_accumulator: Optional[np.ndarray] = None
         self._fear_days_count: int = 0
         self._seed: int = 42
         self._last_day: int = 0
@@ -78,39 +77,53 @@ class TelemetryLogger:
         eagles: List["Eagle"],
         seed: Optional[int],
     ) -> None:
-        """Initialise les tampons de télémétrie avant le premier pas de temps.
-
-        Args:
-            world: Instance de la carte contenant les couches statiques et dynamiques.
-            eagles: Liste initiale des agents fondateurs.
-            seed: Graine aléatoire utilisée pour la simulation.
-        """
+        """Initialise les tampons de télémétrie avant le premier pas de temps."""
         assert world is not None, "WorldMap ne peut pas être None."
         self._fear_accumulator = np.zeros(world.grid_size, dtype=np.float64)
+        self._presence_accumulator = np.zeros(world.grid_size, dtype=np.float64)
         self._fear_days_count = 0
         self._seed = int(seed if seed is not None else (world.seed or 42))
 
         for eagle in eagles:
-            self._register_or_update_agent_meta(eagle, spawn_day=1)
+            self._register_or_update_agent_meta(eagle, world.grid_size, spawn_day=1)
 
-    def _register_or_update_agent_meta(self, eagle: "Eagle", spawn_day: int) -> None:
-        """Enregistre ou met à jour les métadonnées descriptives d'un aigle."""
+    def _register_or_update_agent_meta(
+        self,
+        eagle: "Eagle",
+        grid_size: Tuple[int, int],
+        spawn_day: int,
+    ) -> None:
+        """Enregistre ou met à jour les métadonnées descriptives et territoriales d'un aigle."""
         if eagle.agent_id not in self._agent_meta:
             self._agent_meta[eagle.agent_id] = {
                 "agent_id": int(eagle.agent_id),
                 "sex": str(eagle.sex),
                 "spawn_day": int(spawn_day),
                 "initial_state": str(eagle.state),
+                "final_state": str(eagle.state),
                 "initial_age_days": int(eagle.age_days),
                 "nest_position": eagle.nest_position,
+                "territory_id": int(eagle.territory_id),
+                "partner_id": eagle.partner_id,
                 "parent_nest": eagle.parent_nest,
+                "defense_count": int(eagle.defense_count),
+                "expelled_count": int(eagle.expelled_count),
                 "label": f"Aigle #{eagle.agent_id} ({eagle.sex})",
             }
+            self._agent_occupancy[eagle.agent_id] = np.zeros(grid_size, dtype=np.float32)
             self._prev_defense_counts[eagle.agent_id] = int(eagle.defense_count)
             self._prev_expelled_counts[eagle.agent_id] = int(eagle.expelled_count)
         else:
+            meta = self._agent_meta[eagle.agent_id]
+            meta["final_state"] = str(eagle.state)
+            meta["defense_count"] = int(eagle.defense_count)
+            meta["expelled_count"] = int(eagle.expelled_count)
             if eagle.nest_position is not None:
-                self._agent_meta[eagle.agent_id]["nest_position"] = eagle.nest_position
+                meta["nest_position"] = eagle.nest_position
+            if eagle.territory_id > 0:
+                meta["territory_id"] = int(eagle.territory_id)
+            if eagle.partner_id is not None:
+                meta["partner_id"] = int(eagle.partner_id)
 
     def log_step(
         self,
@@ -120,27 +133,21 @@ class TelemetryLogger:
         daily_reports: Dict[int, Tuple[Cell, "DayReport"]],
         breeding_nests: Dict[Tuple[int, int], "BreedingNest"],
     ) -> None:
-        """Capture l'état de tous les agents vivants à la fin du jour `day`.
-
-        Args:
-            day: Jour courant de la simulation (1..N).
-            world: Carte du monde mise à jour après l'action des agents.
-            eagles: Liste complète des aigles (fondateurs + jeunes émancipés).
-            daily_reports: Dictionnaire {agent_id: (position_depart, DayReport)}.
-            breeding_nests: Dictionnaire des aires de reproduction actives.
-        """
+        """Capture l'état de tous les agents vivants à la fin du jour `day`."""
         assert day >= 1, f"Le jour de simulation doit être >= 1 (reçu: {day})."
         self._last_day = day
 
         if self._fear_accumulator is not None:
             self._fear_accumulator += world.fear_layer.fear
             self._fear_days_count += 1
+        if self._presence_accumulator is not None:
+            self._presence_accumulator += world.presence_layer.presence
 
         topo_grid = world.get_topography()
         eagle_by_id: Dict[int, "Eagle"] = {e.agent_id: e for e in eagles}
 
         for eagle in eagles:
-            self._register_or_update_agent_meta(eagle, spawn_day=day)
+            self._register_or_update_agent_meta(eagle, world.grid_size, spawn_day=day)
 
             if eagle.agent_id not in daily_reports:
                 continue
@@ -149,7 +156,6 @@ class TelemetryLogger:
             substeps = report.substeps
             end_cell = substeps[-1] if substeps else start_cell
 
-            # Calcul de la distance au partenaire (en norme de Chebyshev et Euclidienne km)
             partner_dist_km: float = np.nan
             partner_id_val: int = int(eagle.partner_id) if eagle.partner_id is not None else -1
             if eagle.partner_id is not None and eagle.partner_id in eagle_by_id:
@@ -159,15 +165,16 @@ class TelemetryLogger:
                     dx = float(end_cell[1] - partner.position[1])
                     partner_dist_km = float(np.hypot(dy, dx) * world.cell_size_km)
 
-            # Enregistrement des sous-étapes spatiales et comptage par habitat topographique
             path_cells = [start_cell] + list(substeps)
             step_path_arr = np.asarray(path_cells, dtype=np.int32)
             daily_dist_cells = float(
                 np.linalg.norm(np.diff(step_path_arr, axis=0), axis=1).sum()
             )
 
+            occ_grid = self._agent_occupancy[eagle.agent_id]
             for step_idx, cell in enumerate(substeps):
                 r, c = int(cell[0]), int(cell[1])
+                occ_grid[r, c] += 1.0
                 topo_id = int(topo_grid[r, c])
                 self._substep_records.append(
                     {
@@ -185,13 +192,21 @@ class TelemetryLogger:
             # Détection des événements de défense territoriale ou d'expulsion survenus ce jour
             prev_def = self._prev_defense_counts.get(eagle.agent_id, 0)
             if eagle.defense_count > prev_def:
+                # Cherche le point d'interception le plus éloigné du nid parmi les substeps du jour
+                intercept_cell = end_cell
+                if eagle.nest_position is not None and substeps:
+                    nr, nc = eagle.nest_position
+                    intercept_cell = max(
+                        substeps,
+                        key=lambda pos: max(abs(pos[0] - nr), abs(pos[1] - nc)),
+                    )
                 self._defense_records.append(
                     {
                         "day": int(day),
                         "agent_id": int(eagle.agent_id),
                         "event_type": "DEFENSE_GAGNEE",
-                        "row": int(end_cell[0]),
-                        "col": int(end_cell[1]),
+                        "row": int(intercept_cell[0]),
+                        "col": int(intercept_cell[1]),
                         "count_delta": int(eagle.defense_count - prev_def),
                     }
                 )
@@ -211,7 +226,6 @@ class TelemetryLogger:
                 )
             self._prev_expelled_counts[eagle.agent_id] = int(eagle.expelled_count)
 
-            # Enregistrement d'une capture éventuelle
             if report.captured is not None:
                 self._capture_records.append(
                     {
@@ -224,7 +238,6 @@ class TelemetryLogger:
                     }
                 )
 
-            # Bilan journalier de l'individu
             self._daily_records.append(
                 {
                     "day": int(day),
@@ -251,20 +264,7 @@ class TelemetryLogger:
 
     @staticmethod
     def compute_thermal_orographic_layer(world: "WorldMap") -> np.ndarray:
-        """Calcule l'indice d'ascendance thermique et orographique dans [0, 1].
-
-        En accord avec la physique du modèle :
-        1. Effet orographique : portance mécanique maximale le long des ruptures de pente
-           et falaises (topographie = 3 et fort gradient `slope`).
-        2. Effet thermique : réchauffement différentiel accru sur les pentes exposées au Sud
-           (Adret : `gy < 0` dans la convention Nord=0 -> Sud=49) et les milieux ouverts.
-
-        Args:
-            world: Instance de WorldMap.
-
-        Returns:
-            Matrice numpy 2D (float32) normalisée dans [0, 1].
-        """
+        """Calcule l'indice d'ascendance thermique et orographique dans [0, 1]."""
         elev = world.get_elevation()
         topo = world.get_topography()
         veg = world.get_vegetation()
@@ -278,7 +278,6 @@ class TelemetryLogger:
         orographic_lift = np.clip(slope / max_slope, 0.0, 1.0)
         cliff_bonus = np.where(topo == 3, 0.35, 0.0)
 
-        # Exposition Sud (Adret) : gy > 0 quand l'altitude descend du Nord vers le Sud
         south_aspect = np.clip(np.tanh(gy / 0.04), -1.0, 1.0)
         albedo_openness = 1.0 - 0.5 * veg
         thermal_lift = np.clip(0.5 * (south_aspect + 1.0) * albedo_openness, 0.0, 1.0)
@@ -292,17 +291,7 @@ class TelemetryLogger:
         breeding_nests: Dict[Tuple[int, int], "BreedingNest"],
         social_events: List[Tuple[int, str]],
     ) -> CompiledTelemetry:
-        """Compile les listes de dictionnaires en DataFrames Pandas à empreinte mémoire réduite.
-
-        Args:
-            world: Carte du monde à l'état final.
-            breeding_nests: Dictionnaire des nids reproducteurs pour extraire les événements.
-            social_events: Journal global des événements sociaux.
-
-        Returns:
-            Instance de `CompiledTelemetry` prête pour le Dashboard NiceGUI.
-        """
-        # 1. DataFrame journalier optimisé
+        """Compile les listes de dictionnaires en DataFrames Pandas optimisés."""
         if self._daily_records:
             daily_df = pd.DataFrame.from_records(self._daily_records)
             daily_df["day"] = daily_df["day"].astype("int16")
@@ -310,7 +299,14 @@ class TelemetryLogger:
             daily_df["age_days"] = daily_df["age_days"].astype("int32")
             daily_df["state"] = daily_df["state"].astype("category")
             daily_df["mode"] = daily_df["mode"].astype("category")
-            for col_f in ("satiety_start", "satiety_peak", "satiety_end", "energy_cost", "distance_km", "partner_dist_km"):
+            for col_f in (
+                "satiety_start",
+                "satiety_peak",
+                "satiety_end",
+                "energy_cost",
+                "distance_km",
+                "partner_dist_km",
+            ):
                 daily_df[col_f] = daily_df[col_f].astype("float32")
             for col_i in ("attempts", "captured_bool", "moves", "row", "col", "partner_id"):
                 daily_df[col_i] = daily_df[col_i].astype("int16")
@@ -318,7 +314,6 @@ class TelemetryLogger:
         else:
             daily_df = pd.DataFrame()
 
-        # 2. DataFrame des sous-étapes spatiales
         if self._substep_records:
             substeps_df = pd.DataFrame.from_records(self._substep_records)
             substeps_df["day"] = substeps_df["day"].astype("int16")
@@ -331,7 +326,6 @@ class TelemetryLogger:
         else:
             substeps_df = pd.DataFrame()
 
-        # 3. DataFrame des captures
         if self._capture_records:
             captures_df = pd.DataFrame.from_records(self._capture_records)
             captures_df["day"] = captures_df["day"].astype("int16")
@@ -345,11 +339,9 @@ class TelemetryLogger:
                 columns=["day", "agent_id", "prey_species", "row", "col", "topo_id"]
             )
 
-        # 4. DataFrames d'ontogénie et d'appariement (Gantt Charts)
         ontogeny_df = self._build_intervals_df(daily_df, group_col="state")
         pairing_df = self._build_pairing_intervals_df(daily_df)
 
-        # 5. DataFrame des événements de défense territoriale
         if self._defense_records:
             defense_events_df = pd.DataFrame.from_records(self._defense_records)
             defense_events_df["day"] = defense_events_df["day"].astype("int16")
@@ -360,10 +352,21 @@ class TelemetryLogger:
                 columns=["day", "agent_id", "event_type", "row", "col", "count_delta"]
             )
 
-        # 6. Événements reproducteurs des nids (Ponte, Éclosion, Envol, Émancipation)
         repro_rows: List[Dict[str, Any]] = []
         for pair_key, bnest in breeding_nests.items():
             for ev_day, ev_text in bnest.events_log:
+                ev_cat = "Autre"
+                if "Ponte" in ev_text:
+                    ev_cat = "Ponte"
+                elif "Eclosion" in ev_text:
+                    ev_cat = "Éclosion"
+                elif "Envol" in ev_text:
+                    ev_cat = "Envol"
+                elif "Emancipation" in ev_text:
+                    ev_cat = "Émancipation"
+                elif "Echec" in ev_text or "Perte" in ev_text:
+                    ev_cat = "Perte / Échec"
+
                 repro_rows.append(
                     {
                         "day": int(ev_day),
@@ -371,14 +374,18 @@ class TelemetryLogger:
                         "male_id": int(bnest.male_id),
                         "nest_row": int(bnest.nest_position[0]),
                         "nest_col": int(bnest.nest_position[1]),
+                        "category": ev_cat,
                         "event": str(ev_text),
                     }
                 )
-        repro_events_df = pd.DataFrame.from_records(repro_rows) if repro_rows else pd.DataFrame(
-            columns=["day", "female_id", "male_id", "nest_row", "nest_col", "event"]
+        repro_events_df = (
+            pd.DataFrame.from_records(repro_rows)
+            if repro_rows
+            else pd.DataFrame(
+                columns=["day", "female_id", "male_id", "nest_row", "nest_col", "category", "event"]
+            )
         )
 
-        # Extraction des métadonnées topographiques et matrices environnementales
         topo_types_cfg = world.topography_types
         topo_names = {tid: str(cfg.get("name", f"Relief {tid}")) for tid, cfg in topo_types_cfg.items()}
         topo_colors = {tid: str(cfg.get("color", "#888888")) for tid, cfg in topo_types_cfg.items()}
@@ -402,6 +409,7 @@ class TelemetryLogger:
             defense_events_df=defense_events_df,
             repro_events_df=repro_events_df,
             agent_metadata=self._agent_meta,
+            agent_occupancy_grids=self._agent_occupancy,
             topography_names=topo_names,
             topography_colors=topo_colors,
             elevation_grid=world.get_elevation().astype(np.float32).copy(),
@@ -419,7 +427,6 @@ class TelemetryLogger:
             n_days_simulated=self._last_day,
         )
 
-        # Libération immédiate des tampons bruts pour minimiser la RAM
         self._daily_records.clear()
         self._substep_records.clear()
         self._capture_records.clear()

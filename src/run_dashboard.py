@@ -61,7 +61,7 @@ def main() -> None:
         port=args.port,
         title="Bonelli-IBM — Dashboard Analytique",
         storage_secret="bonelli-ibm-secret-key-2026",
-        dark=True,
+        dark=False,
         show=not args.no_browser,
         reload=args.reload,
     )
