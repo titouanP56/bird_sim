@@ -1,0 +1,90 @@
+# ==============================================================================
+# CONFIGURATION SPÉCIFIQUE ESPÈCE : AIGLE DE BONELLI (Aquila fasciata)
+# Source : docs/01_Modele/species/Aigle de Bonelli/ODD_Agent_Variables_Etat_et_Parametres.md
+# Règle stricte : ZÉRO HUMAIN (aucune variable de dérangement anthropique)
+# ==============================================================================
+
+species_name: "Aquila fasciata"
+
+# ------------------------------------------------------------------------------
+# FEATURE FLAGS (Pilotage progressif v1 -> v2, voir ADR-03)
+# ------------------------------------------------------------------------------
+features:
+  use_glmm_attack: false                # v1: probabilité fixe (28.2%), v2: GLMM complet (Martínez et al. 2014)
+
+# ------------------------------------------------------------------------------
+# 1. MORPHOLOGIE & DIMORPHISME SEXUEL INVERSÉ
+# Sources : Viollat et al. (2024), Morollón et al. (2022), Martínez-Miranzo et al. (2019)
+# ------------------------------------------------------------------------------
+morphology:
+  body_mass_range_g: [1600.0, 2400.0]   # Tags de 45-50g = 1.66% à 2.86% de la masse, moy. 2.25%
+  body_mass_male_mean_g: 1850.0         # [À CALIBRER] Mâle plus léger (dimorphisme inversé)
+  body_mass_female_mean_g: 2250.0       # [À CALIBRER] Femelle plus lourde (coûts de vol battu supérieurs)
+  wing_span_m: 1.65                     # [À CALIBRER] Envergure moyenne (m)
+  wing_area_m2: 0.40                    # [À CALIBRER] Surface alaire moyenne (m²)
+
+# ------------------------------------------------------------------------------
+# 2. CINÉMATIQUE & SEUILS DE VOL
+# Sources : Viollat et al. (2024)
+# ------------------------------------------------------------------------------
+kinematics:
+  flight_speed_threshold_ms: 3.0        # Seuil GPS discriminant le vol du repos/perché (m/s)
+  cruise_speed_soaring_ms: 12.0         # [À CALIBRER] Vitesse moyenne en vol plané/thermique (m/s)
+  cruise_speed_flapping_ms: 10.0        # [À CALIBRER] Vitesse moyenne en vol battu (m/s)
+  stoop_attack_speed_ms: 25.0           # [À CALIBRER] Vitesse de piqué lors d'une attaque (m/s)
+  min_sink_rate_ms: 0.85                # [À CALIBRER] Taux de chute minimal en air calme (m/s)
+  optimal_wind_speed_ms: 5.0            # Vent optimal maximisant la proportion de vol et la portée (m/s)
+  wind_speed_optimal_band_ms: [2.5, 7.5] # Plage de vent favorable au vol (m/s)
+
+# ------------------------------------------------------------------------------
+# 3. MÉTABOLISME & ÉNERGÉTIQUE
+# Sources : López-López et al. (2022), Martínez-Miranzo et al. (2019)
+# ------------------------------------------------------------------------------
+energetics:
+  bmr_male_kj_day: 650.0                # [À CALIBRER] Métabolisme basal mâle (kJ/jour)
+  bmr_female_kj_day: 780.0              # [À CALIBRER] Métabolisme basal femelle (kJ/jour)
+  cost_perched_mult_bmr: 1.5            # [À CALIBRER] Multiplicateur BMR au repos/perché
+  cost_soaring_mult_bmr: 2.2            # [À CALIBRER] Multiplicateur BMR en vol plané/orographique
+  cost_flapping_mult_bmr: 11.0          # [À CALIBRER] Multiplicateur BMR en vol battu (très coûteux)
+  odba_to_kj_coeff: 35.0                # [À CALIBRER] Facteur de conversion ODBA (g/jour) -> kJ/jour
+  max_crop_capacity_g: 450.0            # [À CALIBRER] Capacité maximale du jabot (g)
+  digestive_rate_g_s: 0.015             # [À CALIBRER] Taux d'assimilation digestive r_dig (g/s)
+  assimilation_efficiency: 0.78         # [À CALIBRER] Rendement d'assimilation digestive (epsilon_assim)
+  energy_density_prey_kj_g: 7.5         # [À CALIBRER] Densité énergétique moyenne de la biomasse fraîche (kJ/g)
+  prey_standard_masses_g:
+    rabbit_Oryctolagus_cuniculus: 900.0 # Lapin de garenne (g)
+    corvid_Corvidae_avg: 642.5          # Corvidés moyenne (g)
+    partridge_Alectoris_rufa: 420.0     # Perdrix rouge sauvage (g)
+    pigeon_Columba_spp: 400.0           # Pigeon (g)
+    lizard_Timon_lepidus: 150.0         # Lézard ocellé (g)
+
+# ------------------------------------------------------------------------------
+# 4. CHASSE & PERCEPTION
+# Sources : Martínez et al. (2014), López-López et al. (2022)
+# ------------------------------------------------------------------------------
+foraging:
+  prey_detection_radius_m: 350.0        # [À CALIBRER] Rayon de détection visuelle (m)
+  vegetation_assessment_radius_m: 20.0  # Rayon autour de la proie pour évaluer l'ouverture (m)
+  open_habitat_cover_max_pct: 69.0      # Habitat OPEN si couvert <= 69%, CLOSED si >= 70%
+  favorable_hunting_spot_thresh: 0.50   # Seuil d'indice de détectabilité D_CLC d'un bon spot
+  give_up_time_s: 1800.0                # [À CALIBRER] Temps max de recherche sur un spot sans détection (s)
+  baseline_attack_success_prob: 0.282   # Taux de succès global observé sur 110 attaques (28.2%)
+  # Paramètres v2 (activés si features.use_glmm_attack == true)
+  glmm_attack_intercept: -0.93          # [À CALIBRER] Intercept logit calibré sur moyennes
+  glmm_attack_beta_group_size: -0.170   # Effet taille du groupe de proies G (SE = 0.065)
+  glmm_attack_beta_open_hab: 2.449      # Effet habitat ouvert vs fermé (SE = 1.047)
+  glmm_attack_beta_prey_air: -1.452     # Effet proie en vol vs au sol (SE = 0.507)
+  glmm_attack_beta_surprise: 1.132      # Effet attaque par surprise vs non-surprise (SE = 0.468)
+
+# ------------------------------------------------------------------------------
+# 5. SPATIALITÉ & NIDIFICATION (ZÉRO HUMAIN)
+# Sources : Viollat et al. (2024), Morollón et al. (2022), López-López et al. (2022)
+# ------------------------------------------------------------------------------
+spatial:
+  home_range_k95_mean_km2: 54.84        # Kernel 95% moyen (± 20.78 km² Espagne; ~70 km² France)
+  home_range_k75_mean_km2: 24.30        # Kernel 75% moyen (± 10.18 km², alimentation/repos)
+  home_range_k50_mean_km2: 11.17        # Kernel 50% moyen (± 4.90 km², zone nucléaire)
+  max_neighbor_overlap_pct: 4.18        # Chevauchement territorial inter-voisin toléré (± 3.06%)
+  nests_per_territory: [2, 3]           # Nombre typique de nids alternatifs par territoire
+  nest_buffer_radius_m: 25.0            # Rayon de détection d'une visite/présence au nid (m)
+  nest_excursion_min_time_s: 600.0      # Seuil temporel (10 min) hors de 25 m pour clore une visite (s)

@@ -8,13 +8,6 @@
   "collapse-color-groups": true,
   "colorGroups": [
     {
-      "query": "path:00_Pilotage  ",
-      "color": {
-        "a": 1,
-        "rgb": 14701138
-      }
-    },
-    {
       "query": "path:01_Modele/species  ",
       "color": {
         "a": 1,
@@ -29,10 +22,24 @@
       }
     },
     {
+      "query": "path:00_Pilotage  ",
+      "color": {
+        "a": 1,
+        "rgb": 14701138
+      }
+    },
+    {
       "query": "path:01_Modele",
       "color": {
         "a": 1,
         "rgb": 3699967
+      }
+    },
+    {
+      "query": "path:02_Technique  ",
+      "color": {
+        "a": 1,
+        "rgb": 65484
       }
     }
   ],
@@ -42,10 +49,10 @@
   "nodeSizeMultiplier": 1,
   "lineSizeMultiplier": 1,
   "collapse-forces": true,
-  "centerStrength": 0.518713248970312,
-  "repelStrength": 10,
+  "centerStrength": 0.319414634146341,
+  "repelStrength": 9.63512195121951,
   "linkStrength": 1,
-  "linkDistance": 250,
-  "scale": 1,
+  "linkDistance": 157,
+  "scale": 0.5087618855792575,
   "close": false
 }
