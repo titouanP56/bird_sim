@@ -13,7 +13,7 @@ status: in-progress
 # Jalon 1 : Spécification Conceptuelle (Protocole ODD)
 
 - **Référence parente :** [[feuille_de_route_ibm]] (Section Jalon 1)
-- **Objectif :** Figer l'ensemble des règles biologiques et physiques sous forme de spécifications chiffrées avant toute décision technique d'architecture logicielle ([[Jalon 2]]).
+- **Objectif :** Figer l'ensemble des règles biologiques et physiques sous forme de spécifications chiffrées avant toute décision technique d'architecture logicielle ([[jalon_2_architecture_technique]]).
 
 ## Sous-étape 1.1 : Spécification de l'Agent (ODD Espèce)
 
@@ -38,7 +38,7 @@ Traduire la biologie de l'Aigle de Bonelli (*Aquila fasciata*) en variables et r
   - Définir les signatures exactes des méthodes de requête (`EnvironmentInterface`).
   - Spécifier les types, unités et plages de valeurs garanties pour chaque donnée retournée.
 - **Résultats attendus :**
-  - [x] Note [[Interface_Environnement_Schema_Complet]] finalisée (compléter le schéma des dictionnaires de retour et des unités).
+  - [x] Note [[Interface_Requise_Environnement]] finalisée (compléter le schéma des dictionnaires de retour et des unités).
 
 ## Sous-étape 1.3 : Spécification de l'Environnement (ODD Territoire — Alpilles)
 
@@ -49,20 +49,19 @@ Décrire la physique et l'écologie du massif des Alpilles uniquement à travers
   - Écrire les équations de transformation des données brutes en variables utiles à l'agent (calcul d'ascendance orographique et thermique $w_{uplift}$, indice de stabilité trophique KBI, indice de dérangement temporel).
   - Séparer les calculs physiques génériques des constantes locales des Alpilles.
 - **Résultats attendus :**
-  - [ ] Note [[ODD_Env_Couches_Spatiales_et_Parametres]] rédigée (incluant l'ébauche de `alpilles.yaml`).
-  - [ ] Note [[ODD_Env_Aerologie_et_Meteo]] rédigée (forçage météo + physique des ascendances).
-  - [ ] Note [[ODD_Env_Ressources_Trophiques_et_Derangement]] rédigée (guildes de proies, KBI et fréquentation humaine).
+  - [ ] Note [[ODD_Env_Grilles_et_Parametres_Alpilles]] rédigée (incluant l'ébauche de `alpilles.yaml`).
+  - [ ] Note [[ODD_Env_Sous_Modeles_Physiques]] rédigée (forçage météo + physique des ascendances).
+  - [ ] Note [[ODD_Env_Dynamique_et_Planification]] rédigée (guildes de proies, KBI et fréquentation humaine).
 
 ## Sous-étape 1.4 : Audit de Cohérence & Alignement des Échelles
 
 Vérifier que les spécifications Agent et Environnement s'emboîtent sans contradiction mathématique ou d'échelle avant de passer au code.
 
 - **Actions à mener :**
-  - **Contrôle des unités et clés :** Vérifier que 100 % des variables appelées par [[ODD_Agent_Sous_Modeles_Biophysiques]] sont produites avec le même nom et la même unité dans [[Interface_Environnement_Schema_Complet]].
+  - **Contrôle des unités et clés :** Vérifier que 100 % des variables appelées par [[ODD_Agent_Sous_Modeles_Biophysiques]] sont produites avec le même nom et la même unité dans [[Interface_Requise_Environnement]].
   - **Contrôle d'échelle spatio-temporelle :** Confronter le pas de temps de l'agent ($\Delta t = 5\text{ min}$, soit $\approx 3,6\text{ km}$ parcourus en croisière) à la finesse des phénomènes locaux (rayon de $20\text{ m}$ autour d'une proie, tampon de $25\text{ m}$ au nid).
   - **Séparation Règles vs Validation :** Isoler les régressions statistiques journalières (portée $R_{day}$, rectitude $St_{day}$) dans une note dédiée aux métriques de validation future (Jalon 6) pour ne pas les mélanger aux règles de mouvement pas-à-pas.
 - **Résultats attendus :**
-  - [ ] Note [[Metriques_Validation_Empirique]] créée (cibles statistiques pour le calibrage).
   - [ ] Liste des verrous d'échelle prêts à être tranchés sous forme d'ADR au démarrage du Jalon 2 de [[feuille_de_route_ibm]] (ex. choix de la résolution de grille et méthode d'échantillonnage le long d'un segment de vol).
 
 ## Critère de validation finale (Go / No-Go Jalon 1)

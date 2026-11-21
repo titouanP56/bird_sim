@@ -15,7 +15,7 @@ status: todo
 
 ## Objectif Global du Jalon
 
-Traduire les spécifications scientifiques du Jalon 1 en une architecture logicielle Python **modulaire, performante, native (sans dépendance lourde à WSL2) et optimisée pour le développement assisté par IA** (fichiers courts, faible couplage, typage strict). Aucune logique métier complexe n'est codée dans ce jalon : on tranche les choix techniques via des **ADR** (*Architecture Decision Records*) et on pose les fondations propres du dépôt avant d'attaquer le MVP au Jalon 3.
+Traduire les spécifications scientifiques du Jalon 1 en une architecture logicielle Python **modulaire, performante, native et optimisée pour le développement assisté par IA** (fichiers courts, faible couplage, typage strict). Aucune logique métier complexe n'est codée dans ce jalon : on tranche les choix techniques via des **ADR** (*Architecture Decision Records*) et on pose les fondations propres du dépôt avant d'attaquer le MVP au Jalon 3.
 
 ---
 
